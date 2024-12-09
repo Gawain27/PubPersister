@@ -1,0 +1,3 @@
+[2024-12-09 01:23:25,171 - 32844]  root - INFO: Logging successfully initialized.
+[2024-12-09 01:23:25,172 - 32844]  SynchroSocketServer - INFO: Server started on 127.0.0.1:5151
+[2024-12-09 01:23:25,172 - 32844]  root - INFO: Scraper server started.
