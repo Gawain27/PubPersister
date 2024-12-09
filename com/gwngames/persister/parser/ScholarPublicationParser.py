@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.testing.plugin.plugin_base import logging
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Publication import Publication
@@ -10,147 +13,211 @@ from com.gwngames.persister.entity.variant.scholar.GoogleScholarPublication impo
 
 class ScholarPublicationParser:
     """
-    Processes and persists Google Scholar publication data, including citations, authors, and metadata.
+    Processes Google Scholar publication data, including citations, authors, and metadata.
     """
 
     def __init__(self, session: Session):
+        """
+        Initializes the ScholarPublicationParser with a SQLAlchemy session.
+
+        :param session: SQLAlchemy session to manage database transactions.
+        """
         self.session = session
 
     def process_json(self, json_data: dict):
         """
         Processes the provided JSON and persists/updates the publication and related data.
+
+        :param json_data: JSON data containing publication details, authors, and citations.
         """
         try:
+            # Begin a nested transaction for pessimistic locking
             self.session.begin_nested()
 
+            # Validate input data
+            if "title" not in json_data or "publication_id" not in json_data:
+                raise ValueError("Missing required fields 'title' or 'publication_id' in JSON data.")
+
+            # Process the publication
             publication = self._process_publication(json_data)
 
-            gscholar_publication = self._process_google_scholar_publication(json_data, publication)
+            # Process Google Scholar-specific publication data
+            gscholar_pub = self._process_google_scholar_publication(json_data, publication)
 
-            self._process_authors(json_data, publication)
+            # Process authors associated with the publication
+            self._process_authors(json_data.get("authors", []), publication)
 
-            self._process_citations(json_data, gscholar_publication)
+            # Process citations associated with the publication
+            self._process_citations(json_data.get("citation_graph", []), gscholar_pub)
 
+            # Commit the changes if everything is successful
             self.session.commit()
-        except SQLAlchemyError as e:
+
+        except (ValueError, SQLAlchemyError) as e:
+            # Rollback transaction in case of any errors
             self.session.rollback()
-            raise Exception(f"Error processing JSON data: {str(e)}")
+            raise Exception(f"Error processing Google Scholar publication data: {str(e)}")
 
     def _process_publication(self, json_data: dict) -> Publication:
         """
-        Processes the Publication entity.
+        Processes and persists the Publication entity.
+
+        :param json_data: Dictionary containing publication details.
+        :return: The persisted Publication instance.
         """
-        publication = (
-            self.session.query(Publication)
-            .filter(Publication.title == json_data["title"])
-            .with_for_update()
-            .first()
-        )
+        try:
+            title = json_data["title"]
 
-        if not publication:
-            publication = Publication(
-                title=json_data["title"],
-                url=json_data.get("publication_url"),
-                publication_date=json_data.get("publication_date"),
-                pages=json_data.get("pages"),
-                publisher=json_data.get("publisher"),
-                description=json_data.get("description"),
-            )
-            self.session.add(publication)
+            # Prevent flushing while querying
+            with self.session.no_autoflush:
+                publication = (
+                    self.session.query(Publication)
+                    .filter(Publication.title == title)
+                    .with_for_update()
+                    .one_or_none()
+                )
 
-        # Update BaseEntity metadata
-        publication.update_date = json_data.get("update_date")
-        publication.update_count = json_data.get("update_count", publication.update_count + 1)
+            if not publication:
+                publication = Publication(
+                    title=title,
+                    url=json_data.get("publication_url"),
+                    publication_date=json_data.get("publication_date"),
+                    pages=json_data.get("pages"),
+                    publisher=json_data.get("publisher"),
+                    description=json_data.get("description"),
+                    class_id=Publication.CLASS_ID,
+                    variant_id=Publication.VARIANT_ID,
+                )
+                self.session.add(publication)
 
-        return publication
+            # Update metadata
+            publication.update_date = datetime.now()
+            publication.update_count = publication.update_count + 1 if publication.update_count else 1
+
+            return publication
+
+        except SQLAlchemyError as e:
+            raise Exception(f"Error processing publication '{json_data.get('title')}': {str(e)}")
 
     def _process_google_scholar_publication(self, json_data: dict, publication: Publication) -> GoogleScholarPublication:
         """
         Processes the Google Scholar-specific publication data.
+
+        :param json_data: Dictionary containing Google Scholar-specific details.
+        :param publication: The Publication instance.
+        :return: The persisted GoogleScholarPublication instance.
         """
-        gscholar_publication = (
-            self.session.query(GoogleScholarPublication)
-            .filter(GoogleScholarPublication.publication_id == json_data["publication_id"])
-            .with_for_update()
-            .first()
-        )
+        try:
+            publication_id = json_data["publication_id"]
 
-        if not gscholar_publication:
-            gscholar_publication = GoogleScholarPublication(
-                publication_id=json_data["publication_id"],
-                title_link=json_data.get("title_link"),
-                pdf_link=json_data.get("pdf_link"),
-                total_citations=json_data.get("total_citations"),
-                cites_id=json_data.get("cites_id"),
-                related_articles_url=json_data.get("related_articles_url"),
-                all_versions_url=json_data.get("all_versions_url"),
-            )
-            gscholar_publication.publication = publication
-            self.session.add(gscholar_publication)
+            with self.session.no_autoflush:
+                gscholar_pub = (
+                    self.session.query(GoogleScholarPublication)
+                    .filter(GoogleScholarPublication.publication_id == publication_id)
+                    .with_for_update()
+                    .one_or_none()
+                )
 
-        # Update BaseEntity metadata
-        gscholar_publication.update_date = json_data.get("update_date")
-        gscholar_publication.update_count = json_data.get("update_count", gscholar_publication.update_count + 1)
+            if not gscholar_pub:
+                gscholar_pub = GoogleScholarPublication(
+                    publication_id=publication_id,
+                    title_link=json_data.get("title_link"),
+                    pdf_link=json_data.get("pdf_link"),
+                    total_citations=json_data.get("total_citations"),
+                    cites_id=json_data.get("cites_id"),
+                    related_articles_url=json_data.get("related_articles_url"),
+                    all_versions_url=json_data.get("all_versions_url"),
+                    class_id=GoogleScholarPublication.CLASS_ID,
+                    variant_id=GoogleScholarPublication.VARIANT_ID,
+                )
+                gscholar_pub.publication = publication
+                self.session.add(gscholar_pub)
 
-        return gscholar_publication
+            # Update metadata
+            gscholar_pub.update_date = datetime.now()
+            gscholar_pub.update_count = gscholar_pub.update_count + 1 if gscholar_pub.update_count else 1
 
-    def _process_authors(self, json_data: dict, publication: Publication):
+            return gscholar_pub
+
+        except SQLAlchemyError as e:
+            raise Exception(f"Error processing Google Scholar publication '{json_data.get('title')}': {str(e)}")
+
+    def _process_authors(self, authors: list, publication: Publication):
         """
         Processes and associates authors with the publication.
+
+        :param authors: List of author names.
+        :param publication: The Publication instance.
         """
-        authors = json_data.get("authors", [])
         for author_name in authors:
-            # Fetch or create the author
-            author = (
-                self.session.query(Author)
-                .filter(Author.name == author_name)
-                .with_for_update()
-                .first()
-            )
+            if not author_name:
+                continue  # Skip invalid entries
 
-            if not author:
-                author = Author(name=author_name)
-                self.session.add(author)
-                self.session.flush()  # Flush to get the `id` assigned
+            try:
+                with self.session.no_autoflush:
+                    author = (
+                        self.session.query(Author)
+                        .filter(Author.name == author_name)
+                        .with_for_update()
+                        .one_or_none()
+                    )
 
-            # Check if the association already exists
-            association_exists = (
-                self.session.query(PublicationAuthor)
-                .filter_by(publication_id=publication.id, author_id=author.id)
-                .first()
-            )
+                if not author:
+                    author = Author(
+                        name=author_name,
+                        class_id=Author.CLASS_ID,
+                        variant_id=Author.VARIANT_ID,
+                    )
+                    self.session.add(author)
 
-            if not association_exists:
-                # Add the association explicitly
-                association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
-                self.session.add(association)
+                # Associate the Author with the Publication
+                if not self.session.query(PublicationAuthor).filter_by(
+                    publication_id=publication.id, author_id=author.id
+                ).first():
+                    self.session.add(PublicationAuthor(publication_id=publication.id, author_id=author.id))
 
-    def _process_citations(self, json_data: dict, gscholar_publication: GoogleScholarPublication):
+            except SQLAlchemyError as e:
+                raise Exception(f"Error processing author '{author_name}' for publication '{publication.title}': {str(e)}")
+
+    def _process_citations(self, citations: list, gscholar_pub: GoogleScholarPublication):
         """
         Processes and associates citations with the Google Scholar publication.
+
+        :param citations: List of citation dictionaries.
+        :param gscholar_pub: The GoogleScholarPublication instance.
         """
-        citations = json_data.get("citation_graph", [])
         for citation_data in citations:
-            citation_id = citation_data["citation_link"]
-            citation = (
-                self.session.query(GoogleScholarCitation)
-                .filter(GoogleScholarCitation.citation_link == citation_id)
-                .with_for_update()
-                .first()
-            )
+            try:
+                citation_link = citation_data.get("citation_link")
+                if not citation_link:
+                    continue  # Skip invalid entries
 
-            if not citation:
-                citation = GoogleScholarCitation(
-                    publication_id=gscholar_publication.id,
-                    citation_link=citation_id,
-                    year=citation_data["year"],
-                    citations=citation_data["citations"],
-                    title=gscholar_publication.publication.title,
-                    link=gscholar_publication.title_link,
-                    summary=gscholar_publication.publication.description,
-                )
-                self.session.add(citation)
+                with self.session.no_autoflush:
+                    citation = (
+                        self.session.query(GoogleScholarCitation)
+                        .filter(GoogleScholarCitation.citation_link == citation_link)
+                        .with_for_update()
+                        .one_or_none()
+                    )
 
-            # Update BaseEntity metadata
-            citation.update_date = json_data.get("update_date")
-            citation.update_count = json_data.get("update_count", citation.update_count + 1)
+                if not citation:
+                    citation = GoogleScholarCitation(
+                        publication_id=gscholar_pub.id,
+                        citation_link=citation_link,
+                        year=citation_data.get("year"),
+                        citations=citation_data.get("citations"),
+                        title=gscholar_pub.publication.title,
+                        cites_id=gscholar_pub.cites_id,
+                        link=gscholar_pub.title_link,
+                        summary=gscholar_pub.publication.description,
+                        class_id=GoogleScholarCitation.CLASS_ID,
+                        variant_id=GoogleScholarCitation.VARIANT_ID,
+                    )
+                    self.session.add(citation)
+
+                # Update metadata
+                citation.update_date = datetime.now()
+                citation.update_count = citation.update_count + 1 if citation.update_count else 1
+
+            except SQLAlchemyError as e:
+                raise Exception(f"Error processing citation '{citation_data.get('citation_link')}' for publication '{gscholar_pub.publication.title}': {str(e)}")

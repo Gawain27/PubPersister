@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -42,9 +44,15 @@ class JournalParser:
             .first()
         )
 
+        year = journal_data.get("year")
+        if not year:
+            year = datetime.now().year  # Default to the current year if not found
+        year_date = datetime(year, 1, 1).date()  # Use January 1st for the year
+
         if not journal:
             journal = Journal(
                 title=title,
+                type=journal_data["type"],
                 link=journal_data.get("link"),
                 sjr=journal_data.get("sjr"),
                 q_rank=journal_data.get("q_rank"),
@@ -57,6 +65,9 @@ class JournalParser:
                 cites_per_doc_2years=journal_data.get("cites_per_doc_2years"),
                 refs_per_doc_2008=journal_data.get("refs_per_doc_2008"),
                 female_percent_2008=journal_data.get("female_percent_2008"),
+                year = year_date,
+                class_id = Journal.CLASS_ID,
+                variant_id = Journal.VARIANT_ID
             )
             self.session.add(journal)
         else:
@@ -72,7 +83,8 @@ class JournalParser:
             journal.cites_per_doc_2years = journal_data.get("cites_per_doc_2years", journal.cites_per_doc_2years)
             journal.refs_per_doc_2008 = journal_data.get("refs_per_doc_2008", journal.refs_per_doc_2008)
             journal.female_percent_2008 = journal_data.get("female_percent_2008", journal.female_percent_2008)
+            journal.year = year_date
 
         # Update BaseEntity metadata
         journal.update_date = metadata.get("update_date")
-        journal.update_count = metadata.get("update_count", journal.update_count + 1)
+        journal.update_count = metadata.get("update_count", journal.update_count + 1 if journal.update_count else 1)

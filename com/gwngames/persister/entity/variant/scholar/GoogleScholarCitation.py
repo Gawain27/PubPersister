@@ -22,7 +22,7 @@ class GoogleScholarCitation(BaseEntity):
     title = Column(String, nullable=False)
     link = Column(Text, nullable=True)  # Citation link to the publication
     summary = Column(Text, nullable=True)  # Summary of the cited document
-    cites_id = Column(String, nullable=False, unique=True)  # Unique ID for the citation
+    cites_id = Column(String, nullable=False)  # Unique ID for the citation
     document_link = Column(Text, nullable=True)  # Link to the full document (PDF or other)
     author_ids = Column(Text, nullable=True)  # Comma-separated list of author IDs
     profile_urls = Column(Text, nullable=True)  # Comma-separated list of profile URLs

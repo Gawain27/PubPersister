@@ -1,3 +1,4 @@
+import gzip
 import socket
 import threading
 import logging
@@ -44,25 +45,31 @@ class SynchroSocketServer:
 
     def handle_client(self, client_socket, client_address):
         """Handle communication with a single client."""
-        buffer = ''
+        buffer = b''  # Use bytes buffer for raw data
         try:
             while True:
                 # Receive data from the client
-                chunk = client_socket.recv(1024).decode()
+                chunk = client_socket.recv(1024)
                 if not chunk:
                     SynchroSocketServer.logger.info(f"Client {client_address} disconnected")
                     break
                 buffer += chunk
 
-                # Process complete messages (delimited by '\n')
-                while '\n' in buffer:
-                    message, buffer = buffer.split('\n', 1)
+                # Process complete messages (delimited by '\n' after decompression)
+                while b'\n' in buffer:
+                    message, buffer = buffer.split(b'\n', 1)
                     message = message.strip()
                     if message:
                         SynchroSocketServer.logger.info(f"Received message from {client_address}: {message}")
                         try:
-                            response = self.handler(message)
-                            self.send_message(client_socket, response)
+                            # Decompress the message
+                            #decompressed_message = gzip.decompress(message).decode('utf-8')
+                            decompressed_message = message.decode('utf-8')
+                            response = self.handler(decompressed_message)
+
+                            # Compress the response before sending
+                            #compressed_response = gzip.compress(response.encode('utf-8'))
+                            #self.send_message(client_socket, str(compressed_response))
                         except Exception as e:
                             SynchroSocketServer.logger.error(f"Error handling message: {e}")
                             break

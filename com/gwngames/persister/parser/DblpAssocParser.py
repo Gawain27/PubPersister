@@ -1,12 +1,12 @@
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Conference import Conference
 from com.gwngames.persister.entity.base.Journal import Journal
 from com.gwngames.persister.entity.base.Publication import Publication
-from com.gwngames.persister.entity.base.Relationships import PublicationAuthor
+from com.gwngames.persister.entity.base.Relationships import PublicationAuthor, AuthorCoauthor
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+from datetime import datetime
 
 class PublicationAssociationProcessor:
     """
@@ -21,17 +21,10 @@ class PublicationAssociationProcessor:
         Processes the provided JSON and persists/updates publication associations.
         """
         try:
-            # Begin a nested transaction for pessimistic locking
             self.session.begin_nested()
-
-            # Get the list of publications
             publications = json_data.get("publications", [])
-
-            # Process each publication
             for pub_data in publications:
                 self._process_publication(pub_data, json_data)
-
-            # Commit the changes
             self.session.commit()
         except SQLAlchemyError as e:
             self.session.rollback()
@@ -50,30 +43,25 @@ class PublicationAssociationProcessor:
         )
 
         if not publication:
-            # Create a new publication
-            publication = Publication(
-                title=title
-            )
-            publication.publication_date = pub_data["publication_date"]
+            publication = Publication(title=title, class_id=Publication.CLASS_ID, variant_id=Publication.VARIANT_ID)
             self.session.add(publication)
 
-        # Update BaseEntity metadata
-        publication.update_date = metadata.get("update_date")
-        publication.update_count = metadata.get("update_count", publication.update_count + 1)
 
-        # Process Authors
+        publication.update_date = datetime.strptime(metadata["update_date"], "%Y-%m-%d %H:%M:%S")
+        publication.update_count = metadata.get("update_count", publication.update_count + 1 if publication.update_count else 1)
+
         self._process_authors(pub_data.get("authors", []), publication)
 
-        # Process Journal or Conference
         if pub_data["type"] == "Journal":
-            self._process_journal(pub_data, publication)
+            publication.publication_date = self._process_journal(pub_data, publication).year
         elif pub_data["type"] == "Conference":
-            self._process_conference(pub_data, publication)
+            publication.publication_date = self._process_conference(pub_data, publication).year
 
     def _process_authors(self, author_names: list, publication: Publication):
         """
-        Processes and associates authors with the publication.
+        Processes and associates authors with the publication, and establishes co-author relationships.
         """
+        authors = []
         for author_name in author_names:
             # Fetch or create the author
             author = (
@@ -84,9 +72,12 @@ class PublicationAssociationProcessor:
             )
 
             if not author:
-                author = Author(name=author_name)
+                author = Author(name=author_name, class_id=Author.CLASS_ID, variant_id=Author.VARIANT_ID)
                 self.session.add(author)
-                self.session.flush()  # Ensure `author.id` is available
+                self.session.flush()
+
+            # Add author to the list for co-author processing
+            authors.append(author)
 
             # Check if the association already exists
             association_exists = (
@@ -96,34 +87,67 @@ class PublicationAssociationProcessor:
             )
 
             if not association_exists:
-                # Add the association explicitly
+                # Add the author-publication association
                 association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
                 self.session.add(association)
+
+        # Establish co-author relationships
+        self._process_coauthors(authors)
+
+    def _process_coauthors(self, authors: list):
+        """
+        Establishes co-author relationships between all authors in the list.
+        """
+        for i, author in enumerate(authors):
+            for j, coauthor in enumerate(authors):
+                if i != j:  # Avoid self-referencing
+                    association_exists = (
+                        self.session.query(AuthorCoauthor)
+                        .filter_by(author_id=author.id, coauthor_id=coauthor.id)
+                        .first()
+                    )
+
+                    if not association_exists:
+                        # Add the co-author relationship
+                        coauthor_association = AuthorCoauthor(author_id=author.id, coauthor_id=coauthor.id)
+                        self.session.add(coauthor_association)
 
     def _process_journal(self, pub_data: dict, publication: Publication):
         """
         Processes and associates a journal with the publication.
         """
         journal_name = pub_data["journal_name"]
-        publication_year = pub_data["publication_year"]
+        journal_year = pub_data.get("publication_year")
+
+        # Ensure the journal_year is a valid date or None
+        journal_year_date = None
+        if journal_year:
+            try:
+                # Convert year to a full date (e.g., "2024" -> "2024-01-01")
+                journal_year_date = datetime.strptime(journal_year, "%Y").date()
+            except ValueError:
+                raise Exception(f"Invalid year format: {journal_year}")
 
         journal = (
             self.session.query(Journal)
-            .filter(Journal.title == journal_name, Journal.year == publication_year)
+            .filter(Journal.title == journal_name, Journal.year == journal_year_date)
             .with_for_update()
             .first()
         )
 
         if not journal:
-            # Create a new journal
             journal = Journal(
                 title=journal_name,
-                year=publication_year,
+                year=journal_year_date,
+                type="Journal",
+                class_id=Journal.CLASS_ID,
+                variant_id=Journal.VARIANT_ID
             )
             self.session.add(journal)
 
-        # Link the journal to the publication
         publication.journal = journal
+
+        return journal
 
     def _process_conference(self, pub_data: dict, publication: Publication):
         """
@@ -132,24 +156,35 @@ class PublicationAssociationProcessor:
         conference_acronym = pub_data["conference_acronym"]
         conference_year = pub_data["conference_year"]
 
+        # Ensure the conference_year is a valid date or None
+        conference_year_date = None
+        if conference_year:
+            try:
+                conference_year_date = datetime.strptime(conference_year, "%Y").date()
+            except ValueError:
+                raise Exception(f"Invalid year format: {conference_year}")
+
         conference = (
             self.session.query(Conference)
             .filter(
                 Conference.acronym == conference_acronym,
-                Conference.year == conference_year,
+                Conference.year == conference_year_date,
             )
             .with_for_update()
             .first()
         )
 
         if not conference:
-            # Create a new conference
             conference = Conference(
                 title=conference_acronym,
                 acronym=conference_acronym,
-                year=conference_year,
+                year=conference_year_date,
+                class_id=Conference.CLASS_ID,
+                variant_id=Conference.VARIANT_ID
             )
             self.session.add(conference)
 
-        # Link the conference to the publication
         publication.conference = conference
+
+        return conference
+

@@ -16,7 +16,7 @@ class Journal(BaseEntity):
     id = Column(Integer, nullable= False, primary_key=True, autoincrement=True)
     title = Column(String, nullable=False)
     link = Column(Text, nullable=True)
-    year = Column(Date, nullable=False)
+    year = Column(Date, nullable=True)
     type = Column(String, nullable=False)
     sjr = Column(String, nullable=True)
     q_rank = Column(String, nullable=True)

@@ -1,10 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from com.gwngames.persister.entity.base.Author import Author
-from com.gwngames.persister.entity.base.BaseEntity import BaseEntity
 from com.gwngames.persister.entity.base.Interest import Interest
 from com.gwngames.persister.entity.base.Publication import Publication
 from com.gwngames.persister.entity.base.Relationships import AuthorInterest, AuthorCoauthor, PublicationAuthor
@@ -13,165 +10,216 @@ from com.gwngames.persister.entity.variant.scholar.GoogleScholarAuthor import Go
 
 class ScholarAuthorParser:
     """
-    Class to handle Google Scholar JSON data and persist/update in the database.
+    Processes Google Scholar author data, including interests, co-authors, and publications.
     """
 
     def __init__(self, session: Session):
         """
-        Initialize with a SQLAlchemy session.
+        Initializes the ScholarAuthorParser with a SQLAlchemy session.
+
+        :param session: SQLAlchemy session to manage database transactions.
         """
         self.session = session
 
     def process_google_scholar_data(self, json_data: dict):
         """
-        Process the given JSON data, persisting/updating entities into the database.
+        Processes the provided JSON and persists/updates authors and related data.
+
+        :param json_data: JSON data containing author details, interests, co-authors, and publications.
         """
         try:
-            # Process the main author (Google Scholar Author)
-            author_name = json_data["name"]
-            google_scholar_id = json_data["author_id"]
+            # Begin a nested transaction for pessimistic locking
+            self.session.begin_nested()
 
-            # Retrieve or create the main Author
-            author = self._get_or_create_author(author_name)
+            # Validate input data
+            if "name" not in json_data or "author_id" not in json_data:
+                raise ValueError("Missing required fields 'name' or 'author_id' in JSON data.")
+
+            # Process the author
+            author = self._process_author(json_data)
+
+            # Process related data
+            self._process_interests(author, json_data.get("interests", []))
+            self._process_coauthors(author, json_data.get("coauthors", []))
+            self._process_publications(author, json_data.get("publications", []))
+
+            # Commit the changes if everything is successful
+            self.session.commit()
+
+        except (ValueError, SQLAlchemyError) as e:
+            # Rollback transaction in case of any errors
+            self.session.rollback()
+            raise Exception(f"Error processing Google Scholar data: {str(e)}")
+
+    def _process_author(self, json_data: dict) -> Author:
+        """
+        Processes and persists an author entity, including Google Scholar-specific data.
+
+        :param json_data: Dictionary containing author details.
+        :return: The persisted Author instance.
+        """
+        name = json_data["name"]
+        scholar_id = json_data["author_id"]
+
+        try:
+            # Fetch or create the base Author
+            author = (
+                self.session.query(Author)
+                .filter(Author.name == name)
+                .with_for_update()
+                .one_or_none()
+            )
+
+            if not author:
+                author = Author(
+                    name=name,
+                    class_id=Author.CLASS_ID,
+                    variant_id=Author.VARIANT_ID,
+                )
+                self.session.add(author)
+
+            # Fetch or create the Google Scholar-specific author
+            gscholar_author = (
+                self.session.query(GoogleScholarAuthor)
+                .filter(GoogleScholarAuthor.author_id == scholar_id)
+                .with_for_update()
+                .one_or_none()
+            )
+
+            if not gscholar_author:
+                gscholar_author = GoogleScholarAuthor(
+                    author_id=scholar_id,
+                    author=author,
+                    class_id=GoogleScholarAuthor.CLASS_ID,
+                    variant_id=GoogleScholarAuthor.VARIANT_ID,
+                )
+                self.session.add(gscholar_author)
+
+            # Update author fields
             author.role = json_data.get("role", author.role)
             author.organization = json_data.get("org", author.organization)
             author.image_url = json_data.get("image_url", author.image_url)
             author.homepage_url = json_data.get("homepage_url", author.homepage_url)
 
-            # Retrieve or create the Google Scholar Author
-            gscholar_author = self._get_or_create_google_scholar_author(author, google_scholar_id)
+            # Update Google Scholar-specific fields
             gscholar_author.profile_url = json_data.get("profile_url", gscholar_author.profile_url)
             gscholar_author.verified = json_data.get("verified", gscholar_author.verified)
             gscholar_author.h_index = json_data.get("h_index", gscholar_author.h_index)
             gscholar_author.i10_index = json_data.get("i10_index", gscholar_author.i10_index)
 
-            self._update_interests(author, json_data.get("interests", []))
-
-            self._update_coauthors(author, json_data.get("coauthors", []))
-
-            self._process_publications(author, json_data.get("publications", []))
-
-            # Update metadata in BaseEntity
-            self._update_metadata(author)
-
-            self.session.commit()
-
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-    def _get_or_create_author(self, name: str) -> Author:
-        """
-        Retrieve or create an Author by name.
-        """
-        try:
-            return self.session.query(Author).with_for_update().filter(Author.name == name).one()
-        except NoResultFound:
-            author = Author(name=name)
-            self.session.add(author)
             return author
 
-    def _get_or_create_google_scholar_author(self, author: Author, scholar_id: str) -> GoogleScholarAuthor:
-        """
-        Retrieve or create a GoogleScholarAuthor by scholar_id.
-        """
-        try:
-            return self.session.query(GoogleScholarAuthor).with_for_update().filter(
-                GoogleScholarAuthor.author_id == scholar_id
-            ).one()
-        except NoResultFound:
-            gscholar_author = GoogleScholarAuthor(author_id=scholar_id)
-            gscholar_author.author = author
-            self.session.add(gscholar_author)
-            return gscholar_author
+        except SQLAlchemyError as e:
+            raise Exception(f"Error processing author '{name}': {str(e)}")
 
-    def _update_interests(self, author: Author, interests: list[str]):
+    def _process_interests(self, author: Author, interests: list):
         """
-        Update the interests of an author.
+        Processes and associates interests with the author.
+
+        :param author: The Author instance.
+        :param interests: List of interest names.
         """
         for interest_name in interests:
-            # Fetch or create the interest
-            interest = (
-                self.session.query(Interest)
-                .filter(Interest.name == interest_name)
-                .one_or_none()
-            )
-            if not interest:
-                interest = Interest(name=interest_name)
-                self.session.add(interest)
-                self.session.flush()  # Ensure `interest.id` is available
+            if not interest_name:
+                continue  # Skip invalid entries
 
-            association_exists = (
-                self.session.query(AuthorInterest)
-                .filter_by(author_id=author.id, interest_id=interest.id)
-                .first()
-            )
+            try:
+                # Fetch or create the interest
+                interest = (
+                    self.session.query(Interest)
+                    .filter(Interest.name == interest_name)
+                    .one_or_none()
+                )
 
-            if not association_exists:
-                # Add the association explicitly
-                association = AuthorInterest(author_id=author.id, interest_id=interest.id)
-                self.session.add(association)
+                if not interest:
+                    interest = Interest(
+                        name=interest_name,
+                        class_id=Interest.CLASS_ID,
+                        variant_id=Interest.VARIANT_ID,
+                    )
+                    self.session.add(interest)
 
-    def _update_coauthors(self, author: Author, coauthors: list[str]):
+                # Associate interest with the author
+                if not self.session.query(AuthorInterest).filter_by(
+                    author_id=author.id, interest_id=interest.id
+                ).first():
+                    self.session.add(AuthorInterest(author_id=author.id, interest_id=interest.id))
+
+            except SQLAlchemyError as e:
+                raise Exception(f"Error processing interest '{interest_name}' for author '{author.name}': {str(e)}")
+
+    def _process_coauthors(self, author: Author, coauthors: list):
         """
-        Update the coauthors of an author.
+        Processes and associates co-authors with the author.
+
+        :param author: The Author instance.
+        :param coauthors: List of co-author names.
         """
         for coauthor_name in coauthors:
-            # Fetch or create the coauthor
-            coauthor = self._get_or_create_author(coauthor_name)
+            if not coauthor_name:
+                continue  # Skip invalid entries
 
-            association_exists = (
-                self.session.query(AuthorCoauthor)
-                .filter(
-                    (AuthorCoauthor.author_id == author.id) &
-                    (AuthorCoauthor.coauthor_id == coauthor.id)
+            try:
+                # Fetch or create the co-author
+                coauthor = (
+                    self.session.query(Author)
+                    .filter(Author.name == coauthor_name)
+                    .with_for_update()
+                    .one_or_none()
                 )
-                .first()
-            )
 
-            if not association_exists:
-                # Add the association explicitly
-                association = AuthorCoauthor(author_id=author.id, coauthor_id=coauthor.id)
-                self.session.add(association)
+                if not coauthor:
+                    coauthor = Author(
+                        name=coauthor_name,
+                        class_id=Author.CLASS_ID,
+                        variant_id=Author.VARIANT_ID,
+                    )
+                    self.session.add(coauthor)
 
-    def _process_publications(self, author: Author, publications: list[dict]):
+                # Associate co-author
+                if not self.session.query(AuthorCoauthor).filter_by(
+                    author_id=author.id, coauthor_id=coauthor.id
+                ).first():
+                    self.session.add(AuthorCoauthor(author_id=author.id, coauthor_id=coauthor.id))
+
+            except SQLAlchemyError as e:
+                raise Exception(f"Error processing co-author '{coauthor_name}' for author '{author.name}': {str(e)}")
+
+    def _process_publications(self, author: Author, publications: list):
         """
-        Process and associate publications with the author.
+        Processes and associates publications with the author.
+
+        :param author: The Author instance.
+        :param publications: List of publication dictionaries.
         """
         for pub_data in publications:
-            title = pub_data["title"]
-            # Fetch or create the publication
-            publication = (
-                self.session.query(Publication)
-                .with_for_update()
-                .filter(Publication.title == title)
-                .one_or_none()
-            )
+            try:
+                title = pub_data.get("title")
+                if not title:
+                    continue  # Skip invalid entries
 
-            if not publication:
-                publication = Publication(title=title)
-                self.session.add(publication)
-                self.session.flush()  # Ensure `publication.id` is available
+                # Fetch or create the publication
+                publication = (
+                    self.session.query(Publication)
+                    .filter(Publication.title == title)
+                    .with_for_update()
+                    .one_or_none()
+                )
 
-            # Update publication details
-            publication.publication_year = None  # Add year if available in the future
-            publication.url = pub_data.get("url", publication.url)
+                if not publication:
+                    publication = Publication(
+                        title=title,
+                        url=pub_data.get("url"),
+                        class_id=Publication.CLASS_ID,
+                        variant_id=Publication.VARIANT_ID,
+                    )
+                    self.session.add(publication)
 
-            # Check if the association already exists
-            association_exists = (
-                self.session.query(PublicationAuthor)
-                .filter_by(publication_id=publication.id, author_id=author.id)
-                .first()
-            )
+                # Associate publication with the author
+                if not self.session.query(PublicationAuthor).filter_by(
+                    publication_id=publication.id, author_id=author.id
+                ).first():
+                    self.session.add(PublicationAuthor(publication_id=publication.id, author_id=author.id))
 
-            if not association_exists:
-                # Add the association explicitly
-                association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
-                self.session.add(association)
-
-    def _update_metadata(self, entity: BaseEntity):
-        """
-        Update metadata fields in BaseEntity.
-        """
-        entity.update_date = datetime.now()
-        entity.update_count = entity.update_count + 1 if entity.update_count else 1
+            except SQLAlchemyError as e:
+                raise Exception(f"Error processing publication '{pub_data.get('title')}' for author '{author.name}': {str(e)}")

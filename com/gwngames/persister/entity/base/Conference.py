@@ -17,7 +17,7 @@ class Conference(BaseEntity):
     title = Column(String, nullable=False)
     acronym = Column(String, nullable=True)
     publisher = Column(String, nullable=True)
-    year = Column(Date, nullable=False)
+    year = Column(Date, nullable=True)
     rank = Column(String, nullable=True)
     note = Column(Text, nullable=True)
     dblp_link = Column(Text, nullable=True)
