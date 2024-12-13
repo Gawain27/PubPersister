@@ -46,8 +46,7 @@ class JournalParser:
 
         year = journal_data.get("year")
         if not year:
-            year = datetime.now().year  # Default to the current year if not found
-        year_date = datetime(year, 1, 1).date()  # Use January 1st for the year
+            year = 0 # Default to for null
 
         if not journal:
             journal = Journal(
@@ -57,15 +56,15 @@ class JournalParser:
                 sjr=journal_data.get("sjr"),
                 q_rank=journal_data.get("q_rank"),
                 h_index=journal_data.get("h_index"),
-                total_docs_2008=journal_data.get("total_docs_2008"),
+                total_docs=journal_data.get("total_docs"),
                 total_docs_3years=journal_data.get("total_docs_3years"),
-                total_refs_2008=journal_data.get("total_refs_2008"),
+                total_refs=journal_data.get("total_refs"),
                 total_cites_3years=journal_data.get("total_cites_3years"),
                 citable_docs_3years=journal_data.get("citable_docs_3years"),
                 cites_per_doc_2years=journal_data.get("cites_per_doc_2years"),
-                refs_per_doc_2008=journal_data.get("refs_per_doc_2008"),
-                female_percent_2008=journal_data.get("female_percent_2008"),
-                year = year_date,
+                refs_per_doc=journal_data.get("refs_per_doc"),
+                female_percent=journal_data.get("female_percent"),
+                year = year,
                 class_id = Journal.CLASS_ID,
                 variant_id = Journal.VARIANT_ID
             )
@@ -75,15 +74,15 @@ class JournalParser:
             journal.sjr = journal_data.get("sjr", journal.sjr)
             journal.q_rank = journal_data.get("q_rank", journal.q_rank)
             journal.h_index = journal_data.get("h_index", journal.h_index)
-            journal.total_docs_2008 = journal_data.get("total_docs_2008", journal.total_docs_2008)
+            journal.total_docs = journal_data.get("total_docs", journal.total_docs)
             journal.total_docs_3years = journal_data.get("total_docs_3years", journal.total_docs_3years)
-            journal.total_refs_2008 = journal_data.get("total_refs_2008", journal.total_refs_2008)
+            journal.total_refs = journal_data.get("total_refs_2008", journal.total_refs)
             journal.total_cites_3years = journal_data.get("total_cites_3years", journal.total_cites_3years)
             journal.citable_docs_3years = journal_data.get("citable_docs_3years", journal.citable_docs_3years)
             journal.cites_per_doc_2years = journal_data.get("cites_per_doc_2years", journal.cites_per_doc_2years)
-            journal.refs_per_doc_2008 = journal_data.get("refs_per_doc_2008", journal.refs_per_doc_2008)
-            journal.female_percent_2008 = journal_data.get("female_percent_2008", journal.female_percent_2008)
-            journal.year = year_date
+            journal.refs_per_doc = journal_data.get("refs_per_doc_2008", journal.refs_per_doc)
+            journal.female_percent = journal_data.get("female_percent_2008", journal.female_percent)
+            journal.year = year
 
         # Update BaseEntity metadata
         journal.update_date = metadata.get("update_date")

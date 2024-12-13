@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, Date, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declared_attr
 
 from com.gwngames.persister.entity.base.BaseEntity import BaseEntity
 
@@ -17,7 +17,7 @@ class Publication(BaseEntity):
     title = Column(String, unique=True, nullable=False)
     url = Column(Text)
 
-    publication_date = Column(Date, nullable=True)
+    publication_year = Column(Integer, nullable=True)
     pages = Column(String)
     publisher = Column(String)
     description = Column(Text)

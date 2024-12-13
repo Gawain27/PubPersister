@@ -2,7 +2,6 @@ from datetime import datetime
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy.testing.plugin.plugin_base import logging
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Publication import Publication
@@ -48,7 +47,7 @@ class ScholarPublicationParser:
             self._process_authors(json_data.get("authors", []), publication)
 
             # Process citations associated with the publication
-            self._process_citations(json_data.get("citation_graph", []), gscholar_pub)
+        #    self._process_citations(json_data.get("citation_graph", []), gscholar_pub)
 
             # Commit the changes if everything is successful
             self.session.commit()
@@ -69,7 +68,7 @@ class ScholarPublicationParser:
             title = json_data["title"]
 
             # Prevent flushing while querying
-            with self.session.no_autoflush:
+            with self.session:
                 publication = (
                     self.session.query(Publication)
                     .filter(Publication.title == title)
@@ -77,11 +76,11 @@ class ScholarPublicationParser:
                     .one_or_none()
                 )
 
-            if not publication:
+            if publication is None:
                 publication = Publication(
                     title=title,
                     url=json_data.get("publication_url"),
-                    publication_date=json_data.get("publication_date"),
+                    publication_year=int(json_data.get("publication_date")),
                     pages=json_data.get("pages"),
                     publisher=json_data.get("publisher"),
                     description=json_data.get("description"),
@@ -89,6 +88,13 @@ class ScholarPublicationParser:
                     variant_id=Publication.VARIANT_ID,
                 )
                 self.session.add(publication)
+            else:
+                publication.title = title,
+                publication.url = json_data.get("publication_url")
+                publication.publication_year = int(json_data["publication_date"])
+                publication.pages = json_data.get("pages")
+                publication.publisher = json_data.get("publisher")
+                publication.description = json_data.get("description")
 
             # Update metadata
             publication.update_date = datetime.now()
@@ -110,10 +116,11 @@ class ScholarPublicationParser:
         try:
             publication_id = json_data["publication_id"]
 
-            with self.session.no_autoflush:
+            with self.session:
                 gscholar_pub = (
                     self.session.query(GoogleScholarPublication)
                     .filter(GoogleScholarPublication.publication_id == publication_id)
+                    .filter(GoogleScholarPublication.cites_id == json_data.get("cites_id"))
                     .with_for_update()
                     .one_or_none()
                 )
@@ -206,16 +213,14 @@ class ScholarPublicationParser:
                         citation_link=citation_link,
                         year=citation_data.get("year"),
                         citations=citation_data.get("citations"),
-                        title=gscholar_pub.publication.title,
                         cites_id=gscholar_pub.cites_id,
-                        link=gscholar_pub.title_link,
-                        summary=gscholar_pub.publication.description,
                         class_id=GoogleScholarCitation.CLASS_ID,
                         variant_id=GoogleScholarCitation.VARIANT_ID,
                     )
                     self.session.add(citation)
 
                 # Update metadata
+                citation.publication_id = gscholar_pub.id
                 citation.update_date = datetime.now()
                 citation.update_count = citation.update_count + 1 if citation.update_count else 1
 

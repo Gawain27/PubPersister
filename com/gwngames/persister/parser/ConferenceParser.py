@@ -32,9 +32,6 @@ class ConferenceProcessor:
             self.session.rollback()
             raise Exception(f"Error processing JSON data: {str(e)}")
 
-    import re
-    from datetime import datetime
-
     def _process_conference(self, conference_data: dict, metadata: dict):
         """
         Processes and persists a single conference.
@@ -52,7 +49,6 @@ class ConferenceProcessor:
         year = self._extract_year_from_source(source)
         if not year:  # Fallback or default value
             year = datetime.now().year  # Default to the current year if not found
-        year_date = datetime(year, 1, 1).date()  # Use January 1st for the year
 
         if not conference:
             conference = Conference(
@@ -65,7 +61,7 @@ class ConferenceProcessor:
                 primary_for=conference_data.get("primary_for"),
                 comments=conference_data.get("comments"),
                 average_rating=conference_data.get("average_rating"),
-                year=year_date,  # Assign extracted year as a Date object
+                year=year,
                 class_id=Conference.CLASS_ID,
                 variant_id=Conference.VARIANT_ID
             )
@@ -79,7 +75,7 @@ class ConferenceProcessor:
             conference.primary_for = conference_data.get("primary_for", conference.primary_for)
             conference.comments = conference_data.get("comments", conference.comments)
             conference.average_rating = conference_data.get("average_rating", conference.average_rating)
-            conference.year = year_date  # Update year if modified
+            conference.year = year
 
         # Update BaseEntity metadata
         conference.update_date = metadata.get("update_date")

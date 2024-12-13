@@ -47,4 +47,6 @@ class ScraperListener(object):
         except Exception as e:
             logging.error("Failed message: " + message)
             logging.error(e)
+            session.rollback()
+            session.close()
 

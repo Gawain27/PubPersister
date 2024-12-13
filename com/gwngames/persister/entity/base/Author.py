@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.orm import declared_attr
 
 from com.gwngames.persister.entity.base.BaseEntity import BaseEntity
 

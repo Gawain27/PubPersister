@@ -89,10 +89,10 @@ class ScholarAuthorParser:
             if not gscholar_author:
                 gscholar_author = GoogleScholarAuthor(
                     author_id=scholar_id,
-                    author=author,
                     class_id=GoogleScholarAuthor.CLASS_ID,
                     variant_id=GoogleScholarAuthor.VARIANT_ID,
                 )
+                gscholar_author.author = author
                 self.session.add(gscholar_author)
 
             # Update author fields

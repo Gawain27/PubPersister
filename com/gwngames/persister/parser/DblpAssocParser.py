@@ -43,8 +43,7 @@ class PublicationAssociationProcessor:
         )
 
         if not publication:
-            publication = Publication(title=title, class_id=Publication.CLASS_ID, variant_id=Publication.VARIANT_ID)
-            self.session.add(publication)
+            return
 
 
         publication.update_date = datetime.strptime(metadata["update_date"], "%Y-%m-%d %H:%M:%S")
@@ -72,9 +71,7 @@ class PublicationAssociationProcessor:
             )
 
             if not author:
-                author = Author(name=author_name, class_id=Author.CLASS_ID, variant_id=Author.VARIANT_ID)
-                self.session.add(author)
-                self.session.flush()
+                continue
 
             # Add author to the list for co-author processing
             authors.append(author)
@@ -119,31 +116,15 @@ class PublicationAssociationProcessor:
         journal_name = pub_data["journal_name"]
         journal_year = pub_data.get("publication_year")
 
-        # Ensure the journal_year is a valid date or None
-        journal_year_date = None
-        if journal_year:
-            try:
-                # Convert year to a full date (e.g., "2024" -> "2024-01-01")
-                journal_year_date = datetime.strptime(journal_year, "%Y").date()
-            except ValueError:
-                raise Exception(f"Invalid year format: {journal_year}")
-
         journal = (
             self.session.query(Journal)
-            .filter(Journal.title == journal_name, Journal.year == journal_year_date)
+            .filter(Journal.title == journal_name, Journal.year == journal_year)
             .with_for_update()
             .first()
         )
 
         if not journal:
-            journal = Journal(
-                title=journal_name,
-                year=journal_year_date,
-                type="Journal",
-                class_id=Journal.CLASS_ID,
-                variant_id=Journal.VARIANT_ID
-            )
-            self.session.add(journal)
+            return
 
         publication.journal = journal
 
@@ -156,33 +137,18 @@ class PublicationAssociationProcessor:
         conference_acronym = pub_data["conference_acronym"]
         conference_year = pub_data["conference_year"]
 
-        # Ensure the conference_year is a valid date or None
-        conference_year_date = None
-        if conference_year:
-            try:
-                conference_year_date = datetime.strptime(conference_year, "%Y").date()
-            except ValueError:
-                raise Exception(f"Invalid year format: {conference_year}")
-
         conference = (
             self.session.query(Conference)
             .filter(
                 Conference.acronym == conference_acronym,
-                Conference.year == conference_year_date,
+                Conference.year == conference_year,
             )
             .with_for_update()
             .first()
         )
 
         if not conference:
-            conference = Conference(
-                title=conference_acronym,
-                acronym=conference_acronym,
-                year=conference_year_date,
-                class_id=Conference.CLASS_ID,
-                variant_id=Conference.VARIANT_ID
-            )
-            self.session.add(conference)
+            return
 
         publication.conference = conference
 

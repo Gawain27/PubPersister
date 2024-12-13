@@ -1,4 +1,4 @@
-from sqlalchemy import Date, Column, Integer, ForeignKey, String, Text
+from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from com.gwngames.persister.entity.base.BaseEntity import BaseEntity
@@ -17,7 +17,7 @@ class Conference(BaseEntity):
     title = Column(String, nullable=False)
     acronym = Column(String, nullable=True)
     publisher = Column(String, nullable=True)
-    year = Column(Date, nullable=True)
+    year = Column(Integer, nullable=True)
     rank = Column(String, nullable=True)
     note = Column(Text, nullable=True)
     dblp_link = Column(Text, nullable=True)

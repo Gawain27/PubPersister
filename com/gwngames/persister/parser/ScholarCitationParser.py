@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
+from com.gwngames.persister.entity.base.Publication import Publication
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarCitation import GoogleScholarCitation
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarPublication import GoogleScholarPublication
 
@@ -30,13 +31,26 @@ class ScholarCitationParser:
 
             # Extract publication identifier
             cites_id = json_data.get("cites_id")
+            pub_id = json_data.get("pub_id")
             if not cites_id:
                 raise ValueError("Missing 'cites_id' in the input JSON.")
 
             # Find the publication linked to this citation
             publication = self._find_publication(cites_id)
             if not publication:
-                raise ValueError(f"Publication with cites_id '{cites_id}' not found.")
+                pub = Publication(title=cites_id,
+                                  class_id=Publication.CLASS_ID,
+                                  variant_id=Publication.VARIANT_ID)
+                publication = GoogleScholarPublication(
+                    cites_id=cites_id,
+                    publication_id=pub_id,
+                    class_id=GoogleScholarPublication.CLASS_ID,
+                    variant_id=GoogleScholarPublication.VARIANT_ID,
+                )
+                publication.publication = pub
+                self.session.add(pub)
+                self.session.add(publication)
+
 
             # Process each citation in the data
             citations = json_data.get("citations", [])
@@ -97,6 +111,7 @@ class ScholarCitationParser:
             citation = (
                 self.session.query(GoogleScholarCitation)
                 .filter(GoogleScholarCitation.cites_id == cites_id)
+                .filter(GoogleScholarCitation.citation_link == citation_link)
                 .with_for_update()
                 .one_or_none()
             )
@@ -133,7 +148,7 @@ class ScholarCitationParser:
         except SQLAlchemyError as e:
             raise Exception(f"Error processing citation with link '{citation_link}': {str(e)}")
 
-    def _extract_year(self, citation_data: dict, publication: GoogleScholarPublication) -> str:
+    def _extract_year(self, citation_data: dict, publication: GoogleScholarPublication) -> int:
         """
         Extracts the year for the citation, defaulting to the publication's year if not provided.
 
@@ -143,11 +158,12 @@ class ScholarCitationParser:
         """
         try:
             if "year" in citation_data:
-                return str(citation_data["year"])
-            if publication.publication and publication.publication.publication_date:
-                return str(publication.publication.publication_date.year)
+                return citation_data["year"]
+            if publication.publication and publication.publication.publication_year:
+                return publication.publication.publication_year
         except Exception as e:
             raise Exception(f"Error extracting year for citation: {str(e)}")
 
         # Fallback to 'Unknown'
-        return "Unknown"
+        return 0
+
