@@ -1,3 +1,5 @@
+from sqlalchemy import func
+
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Conference import Conference
 from com.gwngames.persister.entity.base.Journal import Journal
@@ -35,26 +37,30 @@ class PublicationAssociationProcessor:
         Processes and persists a single publication.
         """
         title = pub_data["title"]
+        # Truncate the input title to match the length of the database title
+        title_length = func.length(Publication.title)
+        truncated_title = func.substring(title, 1, title_length)
+
         publication = (
             self.session.query(Publication)
-            .filter(Publication.title == title)
+            .filter(func.word_similarity(Publication.title, truncated_title) > 0.9)
             .with_for_update()
             .first()
         )
 
         if not publication:
-            return
-
+            return  # Skip if no matching publication is found
 
         publication.update_date = datetime.strptime(metadata["update_date"], "%Y-%m-%d %H:%M:%S")
-        publication.update_count = metadata.get("update_count", publication.update_count + 1 if publication.update_count else 1)
+        publication.update_count = metadata.get("update_count",
+                                                publication.update_count + 1 if publication.update_count else 1)
 
         self._process_authors(pub_data.get("authors", []), publication)
 
         if pub_data["type"] == "Journal":
-            publication.publication_date = self._process_journal(pub_data, publication).year
+            self._process_journal(pub_data, publication)
         elif pub_data["type"] == "Conference":
-            publication.publication_date = self._process_conference(pub_data, publication).year
+            self._process_conference(pub_data, publication)
 
     def _process_authors(self, author_names: list, publication: Publication):
         """
@@ -62,16 +68,20 @@ class PublicationAssociationProcessor:
         """
         authors = []
         for author_name in author_names:
-            # Fetch or create the author
+            # Truncate the input author name to match the length of the database name
+            name_length = func.length(Author.name)
+            truncated_author_name = func.substring(author_name, 1, name_length)
+
+            # Fetch the author using similarity
             author = (
                 self.session.query(Author)
-                .filter(Author.name == author_name)
+                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.9)
                 .with_for_update()
                 .first()
             )
 
             if not author:
-                continue
+                continue  # Skip if no matching author is found
 
             # Add author to the list for co-author processing
             authors.append(author)
@@ -116,41 +126,48 @@ class PublicationAssociationProcessor:
         journal_name = pub_data["journal_name"]
         journal_year = pub_data.get("publication_year")
 
+        # Truncate the input journal name to match the length of the database title
+        journal_name_length = func.length(Journal.title)
+        truncated_journal_name = func.substring(journal_name, 1, journal_name_length)
+
+        # Query using similarity for journal name and exact match for year
         journal = (
             self.session.query(Journal)
-            .filter(Journal.title == journal_name, Journal.year == journal_year)
+            .filter(
+                func.word_similarity(Journal.title, truncated_journal_name) > 0.7,
+                Journal.year == journal_year
+            )
             .with_for_update()
             .first()
         )
 
         if not journal:
-            return
+            return  # Skip if no matching journal is found
 
+        # Create the association
         publication.journal = journal
-
-        return journal
 
     def _process_conference(self, pub_data: dict, publication: Publication):
         """
         Processes and associates a conference with the publication.
         """
         conference_acronym = pub_data["conference_acronym"]
-        conference_year = pub_data["conference_year"]
+        # Truncate the input conference acronym to match the length of the database field
+        acronym_length = func.length(Conference.acronym)
+        truncated_acronym = func.substring(conference_acronym, 1, acronym_length)
 
         conference = (
             self.session.query(Conference)
             .filter(
-                Conference.acronym == conference_acronym,
-                Conference.year == conference_year,
+                func.word_similarity(Conference.acronym, truncated_acronym) > 0.8
             )
             .with_for_update()
             .first()
         )
 
         if not conference:
-            return
+            return  # Skip if no matching conference is found
 
+        # Create the association
         publication.conference = conference
-
-        return conference
 

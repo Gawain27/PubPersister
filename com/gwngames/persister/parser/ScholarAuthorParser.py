@@ -1,5 +1,6 @@
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Interest import Interest
@@ -28,26 +29,20 @@ class ScholarAuthorParser:
         :param json_data: JSON data containing author details, interests, co-authors, and publications.
         """
         try:
-            # Begin a nested transaction for pessimistic locking
             self.session.begin_nested()
 
-            # Validate input data
             if "name" not in json_data or "author_id" not in json_data:
                 raise ValueError("Missing required fields 'name' or 'author_id' in JSON data.")
 
-            # Process the author
             author = self._process_author(json_data)
 
-            # Process related data
             self._process_interests(author, json_data.get("interests", []))
             self._process_coauthors(author, json_data.get("coauthors", []))
             self._process_publications(author, json_data.get("publications", []))
 
-            # Commit the changes if everything is successful
             self.session.commit()
 
         except (ValueError, SQLAlchemyError) as e:
-            # Rollback transaction in case of any errors
             self.session.rollback()
             raise Exception(f"Error processing Google Scholar data: {str(e)}")
 
@@ -61,13 +56,15 @@ class ScholarAuthorParser:
         name = json_data["name"]
         scholar_id = json_data["author_id"]
 
+        name_length = func.length(Author.name)
+        truncated_name = func.substring(name, 1, name_length)
+
         try:
-            # Fetch or create the base Author
             author = (
                 self.session.query(Author)
-                .filter(Author.name == name)
+                .filter(func.word_similarity(Author.name, truncated_name) > 0.9)
                 .with_for_update()
-                .one_or_none()
+                .first()
             )
 
             if not author:
@@ -78,12 +75,11 @@ class ScholarAuthorParser:
                 )
                 self.session.add(author)
 
-            # Fetch or create the Google Scholar-specific author
             gscholar_author = (
                 self.session.query(GoogleScholarAuthor)
                 .filter(GoogleScholarAuthor.author_id == scholar_id)
                 .with_for_update()
-                .one_or_none()
+                .first()
             )
 
             if not gscholar_author:
@@ -95,13 +91,11 @@ class ScholarAuthorParser:
                 gscholar_author.author = author
                 self.session.add(gscholar_author)
 
-            # Update author fields
             author.role = json_data.get("role", author.role)
             author.organization = json_data.get("org", author.organization)
             author.image_url = json_data.get("image_url", author.image_url)
             author.homepage_url = json_data.get("homepage_url", author.homepage_url)
 
-            # Update Google Scholar-specific fields
             gscholar_author.profile_url = json_data.get("profile_url", gscholar_author.profile_url)
             gscholar_author.verified = json_data.get("verified", gscholar_author.verified)
             gscholar_author.h_index = json_data.get("h_index", gscholar_author.h_index)
@@ -121,14 +115,16 @@ class ScholarAuthorParser:
         """
         for interest_name in interests:
             if not interest_name:
-                continue  # Skip invalid entries
+                continue
+
+            name_length = func.length(Interest.name)
+            truncated_interest_name = func.substring(interest_name, 1, name_length)
 
             try:
-                # Fetch or create the interest
                 interest = (
                     self.session.query(Interest)
-                    .filter(Interest.name == interest_name)
-                    .one_or_none()
+                    .filter(func.word_similarity(Interest.name, truncated_interest_name) > 0.9)
+                    .first()
                 )
 
                 if not interest:
@@ -139,7 +135,6 @@ class ScholarAuthorParser:
                     )
                     self.session.add(interest)
 
-                # Associate interest with the author
                 if not self.session.query(AuthorInterest).filter_by(
                     author_id=author.id, interest_id=interest.id
                 ).first():
@@ -157,15 +152,17 @@ class ScholarAuthorParser:
         """
         for coauthor_name in coauthors:
             if not coauthor_name:
-                continue  # Skip invalid entries
+                continue
+
+            name_length = func.length(Author.name)
+            truncated_coauthor_name = func.substring(coauthor_name, 1, name_length)
 
             try:
-                # Fetch or create the co-author
                 coauthor = (
                     self.session.query(Author)
-                    .filter(Author.name == coauthor_name)
+                    .filter(func.word_similarity(Author.name, truncated_coauthor_name) > 0.9)
                     .with_for_update()
-                    .one_or_none()
+                    .first()
                 )
 
                 if not coauthor:
@@ -176,7 +173,6 @@ class ScholarAuthorParser:
                     )
                     self.session.add(coauthor)
 
-                # Associate co-author
                 if not self.session.query(AuthorCoauthor).filter_by(
                     author_id=author.id, coauthor_id=coauthor.id
                 ).first():
@@ -196,14 +192,16 @@ class ScholarAuthorParser:
             try:
                 title = pub_data.get("title")
                 if not title:
-                    continue  # Skip invalid entries
+                    continue
 
-                # Fetch or create the publication
+                title_length = func.length(Publication.title)
+                truncated_title = func.substring(title, 1, title_length)
+
                 publication = (
                     self.session.query(Publication)
-                    .filter(Publication.title == title)
+                    .filter(func.word_similarity(Publication.title, truncated_title) > 0.9)
                     .with_for_update()
-                    .one_or_none()
+                    .first()
                 )
 
                 if not publication:
@@ -215,7 +213,6 @@ class ScholarAuthorParser:
                     )
                     self.session.add(publication)
 
-                # Associate publication with the author
                 if not self.session.query(PublicationAuthor).filter_by(
                     publication_id=publication.id, author_id=author.id
                 ).first():

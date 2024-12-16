@@ -1,4 +1,5 @@
 import gzip
+import json
 import socket
 import threading
 import logging
@@ -48,34 +49,40 @@ class SynchroSocketServer:
         buffer = b''  # Use bytes buffer for raw data
         try:
             while True:
-                # Receive data from the client
-                chunk = client_socket.recv(1024)
-                if not chunk:
-                    SynchroSocketServer.logger.info(f"Client {client_address} disconnected")
+                try:
+                    # Receive data from the client
+                    chunk = client_socket.recv(1024)
+                    if not chunk:
+                        # Client has disconnected
+                        SynchroSocketServer.logger.info(f"Client {client_address} disconnected")
+                        break
+                    buffer += chunk
+
+                    # Process complete messages (delimited by '\n')
+                    while b'\n' in buffer:
+                        # Split the buffer at the first newline
+                        message, buffer = buffer.split(b'\n', 1)
+                        message = message.strip()
+
+                        if message:
+                            SynchroSocketServer.logger.info(f"Received message from {client_address}: {message}")
+                            try:
+                                # Decode the JSON message
+                                decompressed_message = message.decode("utf-8")
+                                response = self.handler(decompressed_message)
+
+                                # Compress the response before sending (if needed)
+                                # compressed_response = gzip.compress(response.encode('utf-8'))
+                                # self.send_message(client_socket, compressed_response)
+                            except json.JSONDecodeError as e:
+                                SynchroSocketServer.logger.error(f"JSON decoding error from {client_address}: {e}")
+                            except Exception as e:
+                                SynchroSocketServer.logger.error(f"Error handling message from {client_address}: {e}")
+                except Exception as e:
+                    SynchroSocketServer.logger.error(f"Error receiving data from {client_address}: {e}")
                     break
-                buffer += chunk
-
-                # Process complete messages (delimited by '\n' after decompression)
-                while b'\n' in buffer:
-                    message, buffer = buffer.split(b'\n', 1)
-                    message = message.strip()
-                    if message:
-                        SynchroSocketServer.logger.info(f"Received message from {client_address}: {message}")
-                        try:
-                            # Decompress the message
-                            #decompressed_message = gzip.decompress(message).decode('utf-8')
-                            decompressed_message = message.decode('utf-8')
-                            response = self.handler(decompressed_message)
-
-                            # Compress the response before sending
-                            #compressed_response = gzip.compress(response.encode('utf-8'))
-                            #self.send_message(client_socket, str(compressed_response))
-                        except Exception as e:
-                            SynchroSocketServer.logger.error(f"Error handling message: {e}")
-                            break
-        except Exception as e:
-            SynchroSocketServer.logger.error(f"Error communicating with client {client_address}: {e}")
         finally:
+            # Close the connection and log
             client_socket.close()
             SynchroSocketServer.logger.info(f"Connection with {client_address} closed")
 
