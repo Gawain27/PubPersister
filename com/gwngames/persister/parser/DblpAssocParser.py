@@ -43,7 +43,7 @@ class PublicationAssociationProcessor:
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(Publication.title, truncated_title) > 0.9)
+            .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
             .with_for_update()
             .first()
         )
@@ -75,7 +75,7 @@ class PublicationAssociationProcessor:
             # Fetch the author using similarity
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.9)
+                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -122,6 +122,7 @@ class PublicationAssociationProcessor:
     def _process_journal(self, pub_data: dict, publication: Publication):
         """
         Processes and associates a journal with the publication.
+        If no matching journal is found, creates a new one.
         """
         journal_name = pub_data["journal_name"]
         journal_year = pub_data.get("publication_year")
@@ -142,7 +143,13 @@ class PublicationAssociationProcessor:
         )
 
         if not journal:
-            return  # Skip if no matching journal is found
+            # Create a new Journal object if no match is found
+            journal = Journal(
+                title=journal_name,
+                year=journal_year
+            )
+            self.session.add(journal)
+            self.session.flush()  # Ensure the new Journal gets an ID for association
 
         # Create the association
         publication.journal = journal
@@ -150,8 +157,10 @@ class PublicationAssociationProcessor:
     def _process_conference(self, pub_data: dict, publication: Publication):
         """
         Processes and associates a conference with the publication.
+        If no matching conference is found, creates a new one.
         """
         conference_acronym = pub_data["conference_acronym"]
+
         # Truncate the input conference acronym to match the length of the database field
         acronym_length = func.length(Conference.acronym)
         truncated_acronym = func.substring(conference_acronym, 1, acronym_length)
@@ -159,15 +168,21 @@ class PublicationAssociationProcessor:
         conference = (
             self.session.query(Conference)
             .filter(
-                func.word_similarity(Conference.acronym, truncated_acronym) > 0.8
+                func.word_similarity(Conference.acronym, truncated_acronym) > 0.75
             )
             .with_for_update()
             .first()
         )
 
         if not conference:
-            return  # Skip if no matching conference is found
+            # Create a new Conference object if no match is found
+            conference = Conference(
+                acronym=conference_acronym,
+            )
+            self.session.add(conference)
+            self.session.flush()  # Ensure the new Conference gets an ID for association
 
         # Create the association
         publication.conference = conference
+
 

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -34,21 +35,28 @@ class JournalParser:
 
     def _process_journal(self, journal_data: dict, metadata: dict):
         """
-        Processes and persists a single journal.
+        Processes and persists a single journal using word similarity for title matching.
         """
         title = journal_data["title"]
+
+        # Truncate the input title to match the length of the database field
+        title_length = func.length(Journal.title)
+        truncated_title = func.substring(title, 1, title_length)
+
+        # Query using similarity for journal title
         journal = (
             self.session.query(Journal)
-            .filter(Journal.title == title)
+            .filter(func.word_similarity(Journal.title, truncated_title) > 0.7)
             .with_for_update()
             .first()
         )
 
         year = journal_data.get("year")
         if not year:
-            year = 0 # Default to for null
+            year = 0  # Default to 0 for null year
 
         if not journal:
+            # Create a new Journal object if no match is found
             journal = Journal(
                 title=title,
                 type=journal_data["type"],
@@ -64,24 +72,25 @@ class JournalParser:
                 cites_per_doc_2years=journal_data.get("cites_per_doc_2years"),
                 refs_per_doc=journal_data.get("refs_per_doc"),
                 female_percent=journal_data.get("female_percent"),
-                year = year,
-                class_id = Journal.CLASS_ID,
-                variant_id = Journal.VARIANT_ID
+                year=year,
+                class_id=Journal.CLASS_ID,
+                variant_id=Journal.VARIANT_ID
             )
             self.session.add(journal)
         else:
+            # Update existing Journal object
             journal.link = journal_data.get("link", journal.link)
             journal.sjr = journal_data.get("sjr", journal.sjr)
             journal.q_rank = journal_data.get("q_rank", journal.q_rank)
             journal.h_index = journal_data.get("h_index", journal.h_index)
             journal.total_docs = journal_data.get("total_docs", journal.total_docs)
             journal.total_docs_3years = journal_data.get("total_docs_3years", journal.total_docs_3years)
-            journal.total_refs = journal_data.get("total_refs_2008", journal.total_refs)
+            journal.total_refs = journal_data.get("total_refs", journal.total_refs)
             journal.total_cites_3years = journal_data.get("total_cites_3years", journal.total_cites_3years)
             journal.citable_docs_3years = journal_data.get("citable_docs_3years", journal.citable_docs_3years)
             journal.cites_per_doc_2years = journal_data.get("cites_per_doc_2years", journal.cites_per_doc_2years)
-            journal.refs_per_doc = journal_data.get("refs_per_doc_2008", journal.refs_per_doc)
-            journal.female_percent = journal_data.get("female_percent_2008", journal.female_percent)
+            journal.refs_per_doc = journal_data.get("refs_per_doc", journal.refs_per_doc)
+            journal.female_percent = journal_data.get("female_percent", journal.female_percent)
             journal.year = year
 
         # Update BaseEntity metadata

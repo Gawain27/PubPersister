@@ -61,7 +61,7 @@ class ScholarPublicationParser:
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(Publication.title, truncated_title) > 0.9)
+            .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
             .with_for_update()
             .first()
         )
@@ -144,7 +144,7 @@ class ScholarPublicationParser:
 
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.9)
+                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -179,7 +179,7 @@ class ScholarPublicationParser:
 
             citation = (
                 self.session.query(GoogleScholarCitation)
-                .filter(func.word_similarity(GoogleScholarCitation.citation_link, truncated_citation_link) > 0.9)
+                .filter(func.word_similarity(GoogleScholarCitation.citation_link, truncated_citation_link) > 0.85)
                 .with_for_update()
                 .first()
             )

@@ -62,7 +62,7 @@ class ScholarAuthorParser:
         try:
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_name) > 0.9)
+                .filter(func.word_similarity(Author.name, truncated_name) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -123,7 +123,7 @@ class ScholarAuthorParser:
             try:
                 interest = (
                     self.session.query(Interest)
-                    .filter(func.word_similarity(Interest.name, truncated_interest_name) > 0.9)
+                    .filter(func.word_similarity(Interest.name, truncated_interest_name) > 0.75)
                     .first()
                 )
 
@@ -160,7 +160,7 @@ class ScholarAuthorParser:
             try:
                 coauthor = (
                     self.session.query(Author)
-                    .filter(func.word_similarity(Author.name, truncated_coauthor_name) > 0.9)
+                    .filter(func.word_similarity(Author.name, truncated_coauthor_name) > 0.85)
                     .with_for_update()
                     .first()
                 )
@@ -199,7 +199,7 @@ class ScholarAuthorParser:
 
                 publication = (
                     self.session.query(Publication)
-                    .filter(func.word_similarity(Publication.title, truncated_title) > 0.9)
+                    .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
                     .with_for_update()
                     .first()
                 )

@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -34,12 +35,18 @@ class ConferenceProcessor:
 
     def _process_conference(self, conference_data: dict, metadata: dict):
         """
-        Processes and persists a single conference.
+        Processes and persists a single conference using word similarity for title matching.
         """
         title = conference_data["title"]
+
+        # Truncate the input title to match the length of the database field
+        title_length = func.length(Conference.title)
+        truncated_title = func.substring(title, 1, title_length)
+
+        # Query using similarity for conference title
         conference = (
             self.session.query(Conference)
-            .filter(Conference.title == title)
+            .filter(func.word_similarity(Conference.title, truncated_title) > 0.75)
             .with_for_update()
             .first()
         )
@@ -51,6 +58,7 @@ class ConferenceProcessor:
             year = datetime.now().year  # Default to the current year if not found
 
         if not conference:
+            # Create a new Conference object if no match is found
             conference = Conference(
                 title=title,
                 acronym=conference_data.get("acronym"),
@@ -67,6 +75,7 @@ class ConferenceProcessor:
             )
             self.session.add(conference)
         else:
+            # Update existing Conference object
             conference.acronym = conference_data.get("acronym", conference.acronym)
             conference.publisher = source
             conference.rank = conference_data.get("rank", conference.rank)
