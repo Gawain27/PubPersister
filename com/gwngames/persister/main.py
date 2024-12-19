@@ -5,6 +5,7 @@ import time
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.testing.config import db_url
 
 from com.gwngames.persister.Context import Context
 from com.gwngames.persister.LogFileHandler import LogFileHandler
@@ -23,7 +24,17 @@ if __name__ == '__main__':
     ctx: Context = Context()
     ctx.set_current_dir(os.getcwd())
 
-    DATABASE_URL = "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres"
+    # Initialize config file
+    conf_reader = JsonReader(JsonReader.CONFIG_FILE_NAME)
+    ctx.set_config(conf_reader)
+
+    db_url = conf_reader.get_value("db_url")
+    db_name = conf_reader.get_value("db_name")
+    db_user = conf_reader.get_value("db_user")
+    db_password = conf_reader.get_value("db_password")
+    db_port = conf_reader.get_value("db_port")
+
+    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_url}:{db_port}/{db_name}"
     logging.info(f"Connecting to the database using URL: {DATABASE_URL}")
 
     try:
@@ -34,10 +45,6 @@ if __name__ == '__main__':
     except Exception as e:
         logging.error(f"Failed to initialize the session maker: {e}")
         raise
-
-    # Initialize files for caching
-    conf_reader = JsonReader(JsonReader.CONFIG_FILE_NAME)
-    ctx.set_config(conf_reader)
 
     # Set up logging
     log_file_handler = LogFileHandler(

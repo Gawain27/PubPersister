@@ -1,3 +1,8 @@
 {
-    "pub_citation_neg_counter": -8809
+    "pub_citation_neg_counter": -8809,
+    "db_url":  "172.16.0.10",
+    "db_port": "5432",
+    "db_name": "pub",
+    "db_user": "pub",
+    "db_password": "pubpassword"
 }
