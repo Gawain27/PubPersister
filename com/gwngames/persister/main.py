@@ -5,7 +5,6 @@ import time
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.testing.config import db_url
 
 from com.gwngames.persister.Context import Context
 from com.gwngames.persister.LogFileHandler import LogFileHandler
