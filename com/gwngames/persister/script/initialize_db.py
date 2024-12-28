@@ -1,16 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from com.gwngames.persister.entity.base.Author import Author
+from com.gwngames.persister.entity.base.Conference import Conference
+from com.gwngames.persister.entity.base.Interest import Interest
+from com.gwngames.persister.entity.base.Journal import Journal
+from com.gwngames.persister.entity.base.Publication import Publication
+from com.gwngames.persister.entity.base.Relationships import AuthorCoauthor, PublicationAuthor, AuthorInterest
+from com.gwngames.persister.entity.variant.scholar.GoogleScholarAuthor import GoogleScholarAuthor
+from com.gwngames.persister.entity.variant.scholar.GoogleScholarCitation import GoogleScholarCitation
+from com.gwngames.persister.entity.variant.scholar.GoogleScholarPublication import GoogleScholarPublication
+
 # Import Models and Relationships
-from com.gwngames.server.entity.base.Author import Author
-from com.gwngames.server.entity.base.Conference import Conference
-from com.gwngames.server.entity.base.Interest import Interest
-from com.gwngames.server.entity.base.Journal import Journal
-from com.gwngames.server.entity.base.Publication import Publication
-from com.gwngames.server.entity.base.Relationships import AuthorCoauthor, PublicationAuthor, AuthorInterest
-from com.gwngames.server.entity.variant.scholar.GoogleScholarAuthor import GoogleScholarAuthor
-from com.gwngames.server.entity.variant.scholar.GoogleScholarPublication import GoogleScholarPublication
-from com.gwngames.server.entity.variant.scholar.GoogleScholarCitation import GoogleScholarCitation
+
 
 # Database Configuration
 DATABASE_URL = "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres"
@@ -46,7 +48,6 @@ def create_all_tables():
     AuthorCoauthor.metadata.create_all(bind=engine, checkfirst=True)
     PublicationAuthor.metadata.create_all(bind=engine, checkfirst=True)
     AuthorInterest.metadata.create_all(bind=engine, checkfirst=True)
-    GoogleScholarCitation.negative_seq.metadata.create_all(bind=engine)
 
     print("All tables created successfully!")
 
