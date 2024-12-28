@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, literal
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Publication import Publication
@@ -56,12 +56,28 @@ class ScholarPublicationParser:
         """
         title = json_data["title"]
 
-        title_length = func.length(Publication.title)
-        truncated_title = func.substring(title, 1, title_length)
+        shortest_length = func.least(
+            func.length(Publication.title),  # length of the DB column
+            func.length(literal(title))  # length of the Python string
+        )
+
+        # Truncated DB string
+        db_trunc = func.substring(
+            Publication.title,
+            1,
+            shortest_length
+        )
+
+        # Truncated user input string
+        user_trunc = func.substring(
+            literal(title),
+            1,
+            shortest_length
+        )
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
+            .filter(func.word_similarity(db_trunc, user_trunc) > 0.85)
             .with_for_update()
             .first()
         )
@@ -139,12 +155,9 @@ class ScholarPublicationParser:
             if not author_name:
                 continue
 
-            name_length = func.length(Author.name)
-            truncated_author_name = func.substring(author_name, 1, name_length)
-
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.85)
+                .filter(func.word_similarity(Author.name, author_name) > 0.8)
                 .with_for_update()
                 .first()
             )
@@ -174,12 +187,9 @@ class ScholarPublicationParser:
             if not citation_link:
                 continue
 
-            citation_length = func.length(GoogleScholarCitation.citation_link)
-            truncated_citation_link = func.substring(citation_link, 1, citation_length)
-
             citation = (
                 self.session.query(GoogleScholarCitation)
-                .filter(func.word_similarity(GoogleScholarCitation.citation_link, truncated_citation_link) > 0.85)
+                .filter(func.word_similarity(GoogleScholarCitation.citation_link, citation_link) > 0.85)
                 .with_for_update()
                 .first()
             )

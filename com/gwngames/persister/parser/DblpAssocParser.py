@@ -1,4 +1,4 @@
-from sqlalchemy import func
+from sqlalchemy import func, literal
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Conference import Conference
@@ -38,12 +38,28 @@ class PublicationAssociationProcessor:
         """
         title = pub_data["title"]
         # Truncate the input title to match the length of the database title
-        title_length = func.length(Publication.title)
-        truncated_title = func.substring(title, 1, title_length)
+        shortest_length = func.least(
+            func.length(Publication.title),  # length of the DB column
+            func.length(literal(title))  # length of the title string
+        )
+
+        # Truncated DB string
+        db_trunc = func.substring(
+            Publication.title,
+            1,
+            shortest_length
+        )
+
+        # Truncated user input string
+        user_trunc = func.substring(
+            literal(title),
+            1,
+            shortest_length
+        )
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
+            .filter(func.word_similarity(db_trunc, user_trunc) > 0.85)
             .with_for_update()
             .first()
         )
@@ -68,14 +84,11 @@ class PublicationAssociationProcessor:
         """
         authors = []
         for author_name in author_names:
-            # Truncate the input author name to match the length of the database name
-            name_length = func.length(Author.name)
-            truncated_author_name = func.substring(author_name, 1, name_length)
 
             # Fetch the author using similarity
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_author_name) > 0.85)
+                .filter(func.word_similarity(Author.name, author_name) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -127,15 +140,11 @@ class PublicationAssociationProcessor:
         journal_name = pub_data["journal_name"]
         journal_year = pub_data.get("publication_year")
 
-        # Truncate the input journal name to match the length of the database title
-        journal_name_length = func.length(Journal.title)
-        truncated_journal_name = func.substring(journal_name, 1, journal_name_length)
-
         # Query using similarity for journal name and exact match for year
         journal = (
             self.session.query(Journal)
             .filter(
-                func.word_similarity(Journal.title, truncated_journal_name) > 0.7,
+                func.word_similarity(Journal.title, journal_name) > 0.65,
                 Journal.year == journal_year
             )
             .with_for_update()
@@ -161,14 +170,10 @@ class PublicationAssociationProcessor:
         """
         conference_acronym = pub_data["conference_acronym"]
 
-        # Truncate the input conference acronym to match the length of the database field
-        acronym_length = func.length(Conference.acronym)
-        truncated_acronym = func.substring(conference_acronym, 1, acronym_length)
-
         conference = (
             self.session.query(Conference)
             .filter(
-                func.word_similarity(Conference.acronym, truncated_acronym) > 0.75
+                func.word_similarity(Conference.acronym, conference_acronym) >= 0.75
             )
             .with_for_update()
             .first()

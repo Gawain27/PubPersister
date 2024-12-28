@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     # Start scraper
     scraper_server = SynchroSocketServer(
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=5151,
         handler=ScraperListener.process_listened_message
     )

@@ -39,14 +39,10 @@ class JournalParser:
         """
         title = journal_data["title"]
 
-        # Truncate the input title to match the length of the database field
-        title_length = func.length(Journal.title)
-        truncated_title = func.substring(title, 1, title_length)
-
         # Query using similarity for journal title
         journal = (
             self.session.query(Journal)
-            .filter(func.word_similarity(Journal.title, truncated_title) > 0.7)
+            .filter(func.word_similarity(Journal.title, title) > 0.65)
             .with_for_update()
             .first()
         )

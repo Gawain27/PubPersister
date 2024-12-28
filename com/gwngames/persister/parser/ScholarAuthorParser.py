@@ -1,3 +1,5 @@
+from html.parser import interesting_normal
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -56,13 +58,10 @@ class ScholarAuthorParser:
         name = json_data["name"]
         scholar_id = json_data["author_id"]
 
-        name_length = func.length(Author.name)
-        truncated_name = func.substring(name, 1, name_length)
-
         try:
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, truncated_name) > 0.85)
+                .filter(func.word_similarity(Author.name, name) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -117,13 +116,10 @@ class ScholarAuthorParser:
             if not interest_name:
                 continue
 
-            name_length = func.length(Interest.name)
-            truncated_interest_name = func.substring(interest_name, 1, name_length)
-
             try:
                 interest = (
                     self.session.query(Interest)
-                    .filter(func.word_similarity(Interest.name, truncated_interest_name) > 0.75)
+                    .filter(func.word_similarity(Interest.name, interest_name) > 0.75)
                     .first()
                 )
 
@@ -154,13 +150,10 @@ class ScholarAuthorParser:
             if not coauthor_name:
                 continue
 
-            name_length = func.length(Author.name)
-            truncated_coauthor_name = func.substring(coauthor_name, 1, name_length)
-
             try:
                 coauthor = (
                     self.session.query(Author)
-                    .filter(func.word_similarity(Author.name, truncated_coauthor_name) > 0.85)
+                    .filter(func.word_similarity(Author.name, coauthor_name) > 0.85)
                     .with_for_update()
                     .first()
                 )
@@ -194,12 +187,9 @@ class ScholarAuthorParser:
                 if not title:
                     continue
 
-                title_length = func.length(Publication.title)
-                truncated_title = func.substring(title, 1, title_length)
-
                 publication = (
                     self.session.query(Publication)
-                    .filter(func.word_similarity(Publication.title, truncated_title) > 0.85)
+                    .filter(func.word_similarity(Publication.title, title) > 0.85)
                     .with_for_update()
                     .first()
                 )

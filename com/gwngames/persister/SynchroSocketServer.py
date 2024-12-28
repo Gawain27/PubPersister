@@ -27,7 +27,7 @@ class SynchroSocketServer:
     def start(self):
         """Start the server in a separate thread."""
         self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen(5)  # Allow up to 5 pending connections
+        self.server_socket.listen(50)  # Allow up to 5 pending connections
         self.is_running = True
         self.listener_thread = threading.Thread(target=self._listen_for_connections, daemon=True)
         self.listener_thread.start()

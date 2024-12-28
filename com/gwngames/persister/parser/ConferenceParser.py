@@ -39,14 +39,10 @@ class ConferenceProcessor:
         """
         title = conference_data["title"]
 
-        # Truncate the input title to match the length of the database field
-        title_length = func.length(Conference.title)
-        truncated_title = func.substring(title, 1, title_length)
-
         # Query using similarity for conference title
         conference = (
             self.session.query(Conference)
-            .filter(func.word_similarity(Conference.title, truncated_title) > 0.75)
+            .filter(func.word_similarity(Conference.title, title) > 0.97)
             .with_for_update()
             .first()
         )
