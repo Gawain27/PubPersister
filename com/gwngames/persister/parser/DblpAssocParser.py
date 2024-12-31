@@ -7,15 +7,13 @@ from com.gwngames.persister.entity.base.Publication import Publication
 from com.gwngames.persister.entity.base.Relationships import PublicationAuthor, AuthorCoauthor
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 from datetime import datetime
-
 class PublicationAssociationProcessor:
     """
     Processes and persists publication data, associating it with authors, journals, and conferences.
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session):
         self.session = session
 
     def process_json(self, json_data: dict):
@@ -37,35 +35,41 @@ class PublicationAssociationProcessor:
         Processes and persists a single publication.
         """
         title = pub_data["title"]
+        title_lower = title.lower()
         # Truncate the input title to match the length of the database title
         shortest_length = func.least(
             func.length(Publication.title),  # length of the DB column
-            func.length(literal(title))  # length of the title string
+            func.length(literal(title_lower))  # length of the title string
         )
 
         # Truncated DB string
         db_trunc = func.substring(
-            Publication.title,
+            func.lower(Publication.title),  # Apply lowercase to DB column
             1,
             shortest_length
         )
 
         # Truncated user input string
         user_trunc = func.substring(
-            literal(title),
+            literal(title_lower),
             1,
             shortest_length
         )
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(db_trunc, user_trunc) > 0.85)
+            .filter(func.word_similarity(db_trunc, user_trunc) >= 0.85)
             .with_for_update()
             .first()
         )
 
         if not publication:
-            return  # Skip if no matching publication is found
+            publication = Publication(
+                title=title,
+                class_id=Publication.CLASS_ID,
+                variant_id=Publication.VARIANT_ID,
+            )
+            self.session.add(publication)
 
         publication.update_date = datetime.strptime(metadata["update_date"], "%Y-%m-%d %H:%M:%S")
         publication.update_count = metadata.get("update_count",
@@ -84,17 +88,23 @@ class PublicationAssociationProcessor:
         """
         authors = []
         for author_name in author_names:
+            author_name_lower = author_name.lower()  # Convert to lowercase
 
             # Fetch the author using similarity
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, author_name) > 0.85)
+                .filter(func.word_similarity(func.lower(Author.name), author_name_lower) > 0.85)
                 .with_for_update()
                 .first()
             )
 
             if not author:
-                continue  # Skip if no matching author is found
+                author = Author(
+                    name=author_name,
+                    class_id=Author.CLASS_ID,
+                    variant_id=Author.VARIANT_ID,
+                )
+                self.session.add(author)
 
             # Add author to the list for co-author processing
             authors.append(author)
@@ -110,7 +120,6 @@ class PublicationAssociationProcessor:
                 # Add the author-publication association
                 association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
                 self.session.add(association)
-
         # Establish co-author relationships
         self._process_coauthors(authors)
 
@@ -139,13 +148,13 @@ class PublicationAssociationProcessor:
         """
         journal_name = pub_data["journal_name"]
         journal_year = pub_data.get("publication_year")
+        journal_lower = journal_name.lower()
 
         # Query using similarity for journal name and exact match for year
         journal = (
             self.session.query(Journal)
             .filter(
-                func.word_similarity(Journal.title, journal_name) > 0.65,
-                Journal.year == journal_year
+                func.word_similarity(func.lower(Journal.title), journal_lower) >= 0.65,
             )
             .with_for_update()
             .first()
@@ -155,7 +164,10 @@ class PublicationAssociationProcessor:
             # Create a new Journal object if no match is found
             journal = Journal(
                 title=journal_name,
-                year=journal_year
+                year=journal_year,
+                type="journal",
+                class_id=Journal.CLASS_ID,
+                variant_id=Journal.VARIANT_ID
             )
             self.session.add(journal)
             self.session.flush()  # Ensure the new Journal gets an ID for association
@@ -169,11 +181,11 @@ class PublicationAssociationProcessor:
         If no matching conference is found, creates a new one.
         """
         conference_acronym = pub_data["conference_acronym"]
-
+        acronym_lower = conference_acronym.lower()
         conference = (
             self.session.query(Conference)
             .filter(
-                func.word_similarity(Conference.acronym, conference_acronym) >= 0.75
+                func.word_similarity(func.lower(Conference.acronym), acronym_lower) >= 0.6
             )
             .with_for_update()
             .first()
@@ -183,11 +195,12 @@ class PublicationAssociationProcessor:
             # Create a new Conference object if no match is found
             conference = Conference(
                 acronym=conference_acronym,
+                class_id=Conference.CLASS_ID,
+                variant_id=Conference.VARIANT_ID
             )
             self.session.add(conference)
             self.session.flush()  # Ensure the new Conference gets an ID for association
 
         # Create the association
         publication.conference = conference
-
 

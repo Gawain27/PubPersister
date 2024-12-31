@@ -4,5 +4,7 @@
     "db_port": "5432",
     "db_name": "pub",
     "db_user": "pub",
-    "db_password": "pubpassword"
+    "db_password": "pubpassword",
+    "max_retries": 10,
+    "delay_secs": 10
 }

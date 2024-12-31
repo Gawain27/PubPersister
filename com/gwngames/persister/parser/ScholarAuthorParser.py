@@ -1,8 +1,6 @@
-from html.parser import interesting_normal
-
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, literal
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Interest import Interest
@@ -56,12 +54,13 @@ class ScholarAuthorParser:
         :return: The persisted Author instance.
         """
         name = json_data["name"]
+        name_lower = name.lower()
         scholar_id = json_data["author_id"]
 
         try:
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, name) > 0.85)
+                .filter(func.word_similarity(func.lower(Author.name), name_lower) > 0.85)
                 .with_for_update()
                 .first()
             )
@@ -88,6 +87,7 @@ class ScholarAuthorParser:
                     variant_id=GoogleScholarAuthor.VARIANT_ID,
                 )
                 gscholar_author.author = author
+                gscholar_author.author_key = author.id
                 self.session.add(gscholar_author)
 
             author.role = json_data.get("role", author.role)
@@ -116,10 +116,12 @@ class ScholarAuthorParser:
             if not interest_name:
                 continue
 
+            interest_name_lower = interest_name.lower()  # Convert to lowercase
+
             try:
                 interest = (
                     self.session.query(Interest)
-                    .filter(func.word_similarity(Interest.name, interest_name) > 0.75)
+                    .filter(func.word_similarity(func.lower(Interest.name), interest_name_lower) > 0.75)
                     .first()
                 )
 
@@ -150,10 +152,12 @@ class ScholarAuthorParser:
             if not coauthor_name:
                 continue
 
+            coauthor_name_lower = coauthor_name.lower()  # Convert to lowercase
+
             try:
                 coauthor = (
                     self.session.query(Author)
-                    .filter(func.word_similarity(Author.name, coauthor_name) > 0.85)
+                    .filter(func.word_similarity(func.lower(Author.name), coauthor_name_lower) >= 0.85)
                     .with_for_update()
                     .first()
                 )
@@ -187,9 +191,31 @@ class ScholarAuthorParser:
                 if not title:
                     continue
 
+                title_lower = title.lower()  # Convert to lowercase
+
+                # Truncate the input title to match the length of the database title
+                shortest_length = func.least(
+                    func.length(Publication.title),  # length of the DB column
+                    func.length(literal(title_lower))  # length of the title string
+                )
+
+                # Truncated DB string
+                db_trunc = func.substring(
+                    func.lower(Publication.title),  # Apply lowercase to DB column
+                    1,
+                    shortest_length
+                )
+
+                # Truncated user input string
+                user_trunc = func.substring(
+                    literal(title_lower),
+                    1,
+                    shortest_length
+                )
+
                 publication = (
                     self.session.query(Publication)
-                    .filter(func.word_similarity(Publication.title, title) > 0.85)
+                    .filter(func.word_similarity(db_trunc, user_trunc) >= 0.85)
                     .with_for_update()
                     .first()
                 )
@@ -210,3 +236,4 @@ class ScholarAuthorParser:
 
             except SQLAlchemyError as e:
                 raise Exception(f"Error processing publication '{pub_data.get('title')}' for author '{author.name}': {str(e)}")
+

@@ -10,7 +10,6 @@ from com.gwngames.persister.entity.base.Relationships import PublicationAuthor
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarCitation import GoogleScholarCitation
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarPublication import GoogleScholarPublication
 
-
 class ScholarPublicationParser:
     """
     Processes Google Scholar publication data, including citations, authors, and metadata.
@@ -54,16 +53,16 @@ class ScholarPublicationParser:
         :param json_data: Dictionary containing publication details.
         :return: The persisted Publication instance.
         """
-        title = json_data["title"]
+        title = json_data["title"].lower()  # Convert to lowercase
 
         shortest_length = func.least(
-            func.length(Publication.title),  # length of the DB column
-            func.length(literal(title))  # length of the Python string
+            func.length(Publication.title),
+            func.length(literal(title))
         )
 
         # Truncated DB string
         db_trunc = func.substring(
-            Publication.title,
+            func.lower(Publication.title),  # Convert to lowercase
             1,
             shortest_length
         )
@@ -86,7 +85,7 @@ class ScholarPublicationParser:
             publication = Publication(
                 title=title,
                 url=json_data.get("publication_url"),
-                publication_year=int(json_data.get("publication_date")),
+                publication_year=int(json_data.get("publication_date", 0)),
                 pages=json_data.get("pages"),
                 publisher=json_data.get("publisher"),
                 description=json_data.get("description"),
@@ -95,11 +94,11 @@ class ScholarPublicationParser:
             )
             self.session.add(publication)
         else:
-            publication.url = json_data.get("publication_url")
-            publication.publication_year = int(json_data.get("publication_date"))
-            publication.pages = json_data.get("pages")
-            publication.publisher = json_data.get("publisher")
-            publication.description = json_data.get("description")
+            publication.url = json_data.get("publication_url", publication.url)
+            publication.publication_year = int(json_data.get("publication_date", publication.publication_year))
+            publication.pages = json_data.get("pages", publication.pages)
+            publication.publisher = json_data.get("publisher", publication.publisher)
+            publication.description = json_data.get("description", publication.description)
 
         publication.update_date = datetime.now()
         publication.update_count = publication.update_count + 1 if publication.update_count else 1
@@ -137,6 +136,7 @@ class ScholarPublicationParser:
                 variant_id=GoogleScholarPublication.VARIANT_ID,
             )
             gscholar_pub.publication = publication
+            gscholar_pub.publication_key = publication.id
             self.session.add(gscholar_pub)
 
         gscholar_pub.update_date = datetime.now()
@@ -155,9 +155,11 @@ class ScholarPublicationParser:
             if not author_name:
                 continue
 
+            author_name_lower = author_name.lower()  # Convert to lowercase
+
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(Author.name, author_name) > 0.8)
+                .filter(func.word_similarity(func.lower(Author.name), author_name_lower) > 0.8)
                 .with_for_update()
                 .first()
             )
@@ -171,7 +173,7 @@ class ScholarPublicationParser:
                 self.session.add(author)
 
             if not self.session.query(PublicationAuthor).filter_by(
-                    publication_id=publication.id, author_id=author.id
+                publication_id=publication.id, author_id=author.id
             ).first():
                 self.session.add(PublicationAuthor(publication_id=publication.id, author_id=author.id))
 

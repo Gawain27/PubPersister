@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -38,11 +36,12 @@ class JournalParser:
         Processes and persists a single journal using word similarity for title matching.
         """
         title = journal_data["title"]
+        title_lower = title.lower()
 
         # Query using similarity for journal title
         journal = (
             self.session.query(Journal)
-            .filter(func.word_similarity(Journal.title, title) > 0.65)
+            .filter(func.word_similarity(func.lower(Journal.title), title_lower) >= 0.65)
             .with_for_update()
             .first()
         )
