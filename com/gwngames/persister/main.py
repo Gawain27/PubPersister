@@ -37,7 +37,7 @@ if __name__ == '__main__':
     logging.info(f"Connecting to the database using URL: {DATABASE_URL}")
 
     try:
-        engine = create_engine(DATABASE_URL)
+        engine = create_engine(DATABASE_URL, pool_size=conf_reader.get_value("max_connections"))
         Session = sessionmaker(bind=engine)
         ctx.set_session_maker(Session)
         logging.info("Session maker has been successfully initialized.")

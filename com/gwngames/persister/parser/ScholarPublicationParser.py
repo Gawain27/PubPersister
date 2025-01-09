@@ -1,14 +1,17 @@
-from datetime import datetime
+import logging
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy import func, literal
+from sqlalchemy import func, desc
 
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Publication import Publication
 from com.gwngames.persister.entity.base.Relationships import PublicationAuthor
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarCitation import GoogleScholarCitation
 from com.gwngames.persister.entity.variant.scholar.GoogleScholarPublication import GoogleScholarPublication
+from com.gwngames.persister.utils.StringUtils import StringUtils
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 class ScholarPublicationParser:
     """
@@ -31,53 +34,41 @@ class ScholarPublicationParser:
         """
         try:
             self.session.begin_nested()
-
             if "title" not in json_data or "publication_id" not in json_data:
+                logger.error("Missing required fields 'title' or 'publication_id' in JSON data")
                 raise ValueError("Missing required fields 'title' or 'publication_id' in JSON data.")
 
+            authors = self._process_authors(json_data.get("authors", []))
             publication = self._process_publication(json_data)
             gscholar_pub = self._process_google_scholar_publication(json_data, publication)
-            self._process_authors(json_data.get("authors", []), publication)
             self._process_citations(json_data.get("citation_graph", []), gscholar_pub)
 
-            self.session.commit()
+            for author in authors:
+                if not self.session.query(PublicationAuthor).filter_by(
+                        publication_id=publication.id, author_id=author.id
+                ).first():
+                    self.session.add(PublicationAuthor(publication_id=publication.id, author_id=author.id))
 
-        except (ValueError, SQLAlchemyError) as e:
+            self.session.commit()
+        except Exception as e:
             self.session.rollback()
+            logger.exception("Error processing Google Scholar publication data")
             raise Exception(f"Error processing Google Scholar publication data: {str(e)}")
+        self.session.close()
 
     def _process_publication(self, json_data: dict) -> Publication:
         """
         Processes and persists the Publication entity.
-
-        :param json_data: Dictionary containing publication details.
-        :return: The persisted Publication instance.
         """
-        title = json_data["title"].lower()  # Convert to lowercase
+        title = json_data["title"].lower()
 
-        shortest_length = func.least(
-            func.length(Publication.title),
-            func.length(literal(title))
-        )
-
-        # Truncated DB string
-        db_trunc = func.substring(
-            func.lower(Publication.title),  # Convert to lowercase
-            1,
-            shortest_length
-        )
-
-        # Truncated user input string
-        user_trunc = func.substring(
-            literal(title),
-            1,
-            shortest_length
-        )
+        first_word = StringUtils.first_after_fifth(title)
 
         publication = (
             self.session.query(Publication)
-            .filter(func.word_similarity(db_trunc, user_trunc) > 0.85)
-            .with_for_update()
+            .filter(Publication.title.like(f"%{first_word}%"))
+            .filter(func.jaro_winkler_similarity(Publication.title, title) >= 0.87)
+            .order_by(desc(func.jaro_winkler_similarity(Publication.title, title)))
             .first()
         )
 
@@ -93,33 +84,29 @@ class ScholarPublicationParser:
                 variant_id=Publication.VARIANT_ID,
             )
             self.session.add(publication)
+            self.session.flush()
         else:
             publication.url = json_data.get("publication_url", publication.url)
-            publication.publication_year = int(json_data.get("publication_date", publication.publication_year))
+            publication.publication_year = int(
+                json_data.get("publication_date", publication.publication_year)
+            )
             publication.pages = json_data.get("pages", publication.pages)
             publication.publisher = json_data.get("publisher", publication.publisher)
             publication.description = json_data.get("description", publication.description)
 
-        publication.update_date = datetime.now()
-        publication.update_count = publication.update_count + 1 if publication.update_count else 1
-
+        self.session.flush()
         return publication
 
     def _process_google_scholar_publication(self, json_data: dict,
                                             publication: Publication) -> GoogleScholarPublication:
         """
         Processes the Google Scholar-specific publication data.
-
-        :param json_data: Dictionary containing Google Scholar-specific details.
-        :param publication: The Publication instance.
-        :return: The persisted GoogleScholarPublication instance.
         """
         publication_id = json_data["publication_id"]
         gscholar_pub = (
             self.session.query(GoogleScholarPublication)
             .filter(GoogleScholarPublication.publication_id == publication_id)
             .filter(GoogleScholarPublication.cites_id == json_data.get("cites_id"))
-            .with_for_update()
             .first()
         )
 
@@ -139,50 +126,45 @@ class ScholarPublicationParser:
             gscholar_pub.publication_key = publication.id
             self.session.add(gscholar_pub)
 
-        gscholar_pub.update_date = datetime.now()
-        gscholar_pub.update_count = gscholar_pub.update_count + 1 if gscholar_pub.update_count else 1
-
         return gscholar_pub
 
-    def _process_authors(self, authors: list, publication: Publication):
+    def _process_authors(self, authors: list):
         """
         Processes and associates authors with the publication.
-
-        :param authors: List of author names.
-        :param publication: The Publication instance.
         """
+        author_res = []
         for author_name in authors:
             if not author_name:
+                logger.warning("Skipping empty author name")
                 continue
 
-            author_name_lower = author_name.lower()  # Convert to lowercase
+            author_name = author_name.lower()
+            surname = author_name.split(" ")[-1]
 
             author = (
                 self.session.query(Author)
-                .filter(func.word_similarity(func.lower(Author.name), author_name_lower) > 0.8)
-                .with_for_update()
+                .filter(Author.name.like(f"%{surname}"))
+                .filter(Author.name.like(f"{author_name[:1]}%"))
+                .filter(func.jaro_winkler_similarity(Author.name, author_name) >= 0.7)
+                .order_by(desc(func.jaro_winkler_similarity(Author.name, author_name)))
                 .first()
             )
 
             if not author:
+                if StringUtils.is_first_word_short(author_name):
+                    continue
                 author = Author(
                     name=author_name,
                     class_id=Author.CLASS_ID,
                     variant_id=Author.VARIANT_ID,
                 )
                 self.session.add(author)
-
-            if not self.session.query(PublicationAuthor).filter_by(
-                publication_id=publication.id, author_id=author.id
-            ).first():
-                self.session.add(PublicationAuthor(publication_id=publication.id, author_id=author.id))
+            author_res.append(author)
+        return author_res
 
     def _process_citations(self, citations: list, gscholar_pub: GoogleScholarPublication):
         """
         Processes and associates citations with the Google Scholar publication.
-
-        :param citations: List of citation dictionaries.
-        :param gscholar_pub: The GoogleScholarPublication instance.
         """
         for citation_data in citations:
             citation_link = citation_data.get("citation_link")
@@ -191,8 +173,7 @@ class ScholarPublicationParser:
 
             citation = (
                 self.session.query(GoogleScholarCitation)
-                .filter(func.word_similarity(GoogleScholarCitation.citation_link, citation_link) > 0.85)
-                .with_for_update()
+                .filter(GoogleScholarCitation.citation_link == citation_link)
                 .first()
             )
 
@@ -208,5 +189,3 @@ class ScholarPublicationParser:
                 )
                 self.session.add(citation)
 
-            citation.update_date = datetime.now()
-            citation.update_count = citation.update_count + 1 if citation.update_count else 1

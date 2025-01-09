@@ -83,7 +83,6 @@ class ScholarCitationParser:
             return (
                 self.session.query(GoogleScholarPublication)
                 .filter(GoogleScholarPublication.cites_id == cites_id)
-                .with_for_update()
                 .one_or_none()
             )
         except SQLAlchemyError as e:
@@ -112,7 +111,6 @@ class ScholarCitationParser:
                 self.session.query(GoogleScholarCitation)
                 .filter(GoogleScholarCitation.cites_id == cites_id)
                 .filter(GoogleScholarCitation.citation_link == citation_link)
-                .with_for_update()
                 .one_or_none()
             )
 

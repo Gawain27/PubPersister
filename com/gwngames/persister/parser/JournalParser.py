@@ -1,8 +1,8 @@
-from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from com.gwngames.persister.entity.base.Journal import Journal
+from com.gwngames.persister.utils.StringUtils import StringUtils
 
 
 class JournalParser:
@@ -27,22 +27,24 @@ class JournalParser:
                 self._process_journal(journal_data, json_data)
 
             self.session.commit()
-        except SQLAlchemyError as e:
+        except Exception as e:
             self.session.rollback()
             raise Exception(f"Error processing JSON data: {str(e)}")
+        self.session.close()
 
     def _process_journal(self, journal_data: dict, metadata: dict):
         """
         Processes and persists a single journal using word similarity for title matching.
         """
-        title = journal_data["title"]
-        title_lower = title.lower()
+        title = journal_data["title"].lower()
 
-        # Query using similarity for journal title
+        first_word = StringUtils.first_after_fifth(title)
+
         journal = (
             self.session.query(Journal)
-            .filter(func.word_similarity(func.lower(Journal.title), title_lower) >= 0.65)
-            .with_for_update()
+            .filter(Journal.title.like(f"%{first_word}%"))
+            .filter(func.jaro_similarity(Journal.title, title) >= 0.75)
+            .order_by(desc(func.jaro_similarity(Journal.title, title)))
             .first()
         )
 

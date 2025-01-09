@@ -1,8 +1,7 @@
 import re
 from datetime import datetime
 
-from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from com.gwngames.persister.entity.base.Conference import Conference
@@ -29,36 +28,35 @@ class ConferenceProcessor:
                 self._process_conference(conference_data, json_data)
 
             self.session.commit()
-        except SQLAlchemyError as e:
+        except Exception as e:
             self.session.rollback()
             raise Exception(f"Error processing JSON data: {str(e)}")
+        self.session.close()
 
     def _process_conference(self, conference_data: dict, metadata: dict):
         """
         Processes and persists a single conference using word similarity for title matching.
         """
         title = conference_data["title"]
+        acronym = conference_data.get("acronym").upper()
 
-        # Query using similarity for conference title
         conference = (
             self.session.query(Conference)
-            .filter(func.word_similarity(Conference.title, title) > 0.97)
-            .with_for_update()
+            .filter(func.jaro_similarity(Conference.acronym, acronym) >= 0.95)
+            .order_by(desc(func.jaro_similarity(Conference.acronym, acronym)))
             .first()
         )
 
-        # Extract year from source and create a valid Date object
         source = conference_data.get("source", "")
         year = self._extract_year_from_source(source)
         if not year:  # Fallback or default value
             year = datetime.now().year  # Default to the current year if not found
 
         if not conference:
-            # Create a new Conference object if no match is found
             conference = Conference(
                 title=title,
-                acronym=conference_data.get("acronym"),
-                publisher=source,  # Mapped from 'source'
+                acronym=acronym,
+                publisher=source,
                 rank=conference_data.get("rank"),
                 note=conference_data.get("note"),
                 dblp_link=conference_data.get("dblp_link"),
@@ -71,7 +69,6 @@ class ConferenceProcessor:
             )
             self.session.add(conference)
         else:
-            # Update existing Conference object
             conference.acronym = conference_data.get("acronym", conference.acronym)
             conference.publisher = source
             conference.rank = conference_data.get("rank", conference.rank)
@@ -82,7 +79,6 @@ class ConferenceProcessor:
             conference.average_rating = conference_data.get("average_rating", conference.average_rating)
             conference.year = year
 
-        # Update BaseEntity metadata
         conference.update_date = metadata.get("update_date")
         conference.update_count = metadata.get("update_count",
                                                conference.update_count + 1 if conference.update_count else 1)

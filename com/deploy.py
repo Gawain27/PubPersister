@@ -28,14 +28,14 @@ def deploy_directory(local_directory, remote_host, remote_user, remote_password,
     finally:
         ssh.close()
 
-if __name__ == "__main__":
+if __name__ == "__main__":                             
     # Get the directory containing this script
     script_directory = os.path.dirname(os.path.abspath(__file__))
 
     # Remote configuration
     REMOTE_HOST = "gwngames.com"  # Replace with your remote server's address
-    REMOTE_USER = ""  # Replace with your username
-    REMOTE_PASSWORD = ""  # Replace with your password
+    REMOTE_USER = "gwng"  # Replace with your username
+    REMOTE_PASSWORD = "CharizardXgawain27"  # Replace with your password
     REMOTE_DIRECTORY = "/opt/gpub/persister"  # Replace with your target directory on the remote machine
 
     # Deploy the script's directory
