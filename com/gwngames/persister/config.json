@@ -1,10 +1,12 @@
 {
     "pub_citation_neg_counter": -8809,
+    "unactive_conn_listen_seconds" : 1200,
     "db_url":  "172.16.0.10",
     "db_port": "5432",
     "db_name": "pub",
     "db_user": "pub",
     "db_password": "pubpassword",
-    "max_retries": 10,
-    "delay_secs": 10
+    "max_retries": 3,
+    "delay_secs": 30,
+    "max_connections": 300
 }

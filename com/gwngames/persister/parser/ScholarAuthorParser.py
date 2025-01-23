@@ -57,13 +57,18 @@ class ScholarAuthorParser:
         name = json_data.get("name").lower()
 
         surname = name.split(" ")[-1]
+        if len(name.split(" ")[0].replace('.', '')) > 1:
+            initials = name[:2]
+        else:
+            initials = name[:1]
 
         try:
             author = (
                 self.session.query(Author)
                 .filter(Author.name.like(f"%{surname}"))
-                .filter(func.jaro_winkler_similarity(Author.name, name) >= 0.7)
-                .order_by(desc(func.jaro_winkler_similarity(Author.name, name)))
+                .filter(Author.name.like(f"{initials}%"))
+                .filter(func.word_similarity(Author.name, name) >= 0.7)
+                .order_by(desc(func.word_similarity(Author.name, name)))
                 .first()
             )
 
@@ -91,6 +96,7 @@ class ScholarAuthorParser:
                 gscholar_author.author_key = author.id
                 self.session.add(gscholar_author)
 
+            author.name = name
             author.role = json_data.get("role", author.role)
             author.organization = json_data.get("org", author.organization)
             author.image_url = json_data.get("image_url", author.image_url)
@@ -156,14 +162,18 @@ class ScholarAuthorParser:
 
             coauthor_name = coauthor_name.lower()
             surname = coauthor_name.split(" ")[-1]
+            if len(coauthor_name.split(" ")[0].replace('.', '')) > 1:
+                initials = coauthor_name[:2]
+            else:
+                initials = coauthor_name[:1]
 
             try:
                 co_author = (
                     self.session.query(Author)
                     .filter(Author.name.like(f"%{surname}"))
-                    .filter(Author.name.like(f"{coauthor_name[:1]}%"))
-                    .filter(func.jaro_winkler_similarity(Author.name, coauthor_name) >= 0.7)
-                    .order_by(desc(func.jaro_winkler_similarity(Author.name, coauthor_name)))
+                    .filter(Author.name.like(f"{initials}%"))
+                    .filter(func.word_similarity(Author.name, coauthor_name) >= 0.7)
+                    .order_by(desc(func.word_similarity(Author.name, coauthor_name)))
                     .first()
                 )
 

@@ -1,3 +1,4 @@
+from com.gwngames.persister.Context import Context
 from com.gwngames.persister.entity.base.Author import Author
 from com.gwngames.persister.entity.base.Conference import Conference
 from com.gwngames.persister.entity.base.Journal import Journal
@@ -30,7 +31,6 @@ class PublicationAssociationProcessor:
             self.session.begin_nested()
             publications = json_data.get("publications", [])
             for pub_data in publications:
-                logging.info(f"Processing publication: {pub_data.get('title', 'unknown_title')} in JSON ID: {json_id}")
                 self._process_publication(pub_data)
             self.session.commit()
             logging.info(f"Successfully processed JSON with ID: {json_id}")
@@ -82,12 +82,17 @@ class PublicationAssociationProcessor:
                 author_name = author_name.lower()
                 surname = author_name.split(" ")[-1]
 
+                if len(author_name.split(" ")[0].replace('.', '')) > 1:
+                    initials = author_name[:2]
+                else:
+                    initials = author_name[:1]
+
                 author = (
                     self.session.query(Author)
                     .filter(Author.name.like(f"%{surname}"))
-                    .filter(Author.name.like(f"{author_name[:1]}%"))
-                    .filter(func.jaro_winkler_similarity(Author.name, author_name) >= 0.7)
-                    .order_by(desc(func.jaro_winkler_similarity(Author.name, author_name)))
+                    .filter(Author.name.like(f"{initials}%"))
+                    .filter(func.word_similarity(Author.name, author_name) >= 0.7)
+                    .order_by(desc(func.word_similarity(Author.name, author_name)))
                     .first()
                 )
 
@@ -97,15 +102,25 @@ class PublicationAssociationProcessor:
 
                 authors.append(author)
 
-                association_exists = (
-                    self.session.query(PublicationAuthor)
-                    .filter_by(publication_id=publication.id, author_id=author.id)
-                    .first()
-                )
+                pub_rel_session = Context().get_session()
+                try:
+                    association_exists = (
+                        pub_rel_session.query(PublicationAuthor)
+                        .filter_by(publication_id=publication.id, author_id=author.id)
+                        .first()
+                    )
 
-                if not association_exists:
-                    association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
-                    self.session.add(association)
+                    if not association_exists:
+                        association = PublicationAuthor(publication_id=publication.id, author_id=author.id)
+                        pub_rel_session.add(association)
+
+                    pub_rel_session.commit()
+                    pub_rel_session.close()
+                except Exception as e:
+                    pub_rel_session.rollback()
+                    pub_rel_session.close()
+                    logging.error(f"Error processing pub-author {author_name} - {publication.title}: {str(e)}")
+
             except SQLAlchemyError as e:
                 logging.error(f"Error processing author {author_name}: {str(e)}")
                 raise
@@ -121,15 +136,24 @@ class PublicationAssociationProcessor:
         for i, author in enumerate(authors):
             for j, coauthor in enumerate(authors):
                 if i != j:
-                    association_exists = (
-                        self.session.query(AuthorCoauthor)
-                        .filter_by(author_id=author.id, coauthor_id=coauthor.id)
-                        .first()
-                    )
+                    coauthor_session = Context().get_session()
+                    try:
+                        association_exists = (
+                            coauthor_session.query(AuthorCoauthor)
+                            .filter_by(author_id=author.id, coauthor_id=coauthor.id)
+                            .first()
+                        )
 
-                    if not association_exists:
-                        coauthor_association = AuthorCoauthor(author_id=author.id, coauthor_id=coauthor.id)
-                        self.session.add(coauthor_association)
+                        if not association_exists:
+                            coauthor_association = AuthorCoauthor(author_id=author.id, coauthor_id=coauthor.id)
+                            coauthor_session.add(coauthor_association)
+
+                        coauthor_session.commit()
+                        coauthor_session.close()
+                    except Exception as e:
+                        coauthor_session.rollback()
+                        coauthor_session.close()
+                        logging.error(f"Error processing co-author relationship {coauthor} - {author}: {str(e)}")
 
     def _process_journal(self, pub_data: dict, publication: Publication):
         """

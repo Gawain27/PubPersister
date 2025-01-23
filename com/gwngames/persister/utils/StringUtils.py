@@ -20,9 +20,14 @@ class StringUtils:
         fifth_index = total_chars // 5
 
         current_index = 0
-        for word in text.split():
+        words = text.split()
+        for i, word in enumerate(words):
             next_index = current_index + len(word)
             if current_index <= fifth_index < next_index:
+                # Check if the word is shorter than 2 characters
+                if len(word) < 2:
+                    # Return the next word if it exists
+                    return words[i + 1] if i + 1 < len(words) else None
                 return word
             current_index = next_index + 1
 
@@ -45,3 +50,4 @@ class StringUtils:
 
         return sanitized_string
 
+print(StringUtils.first_after_fifth("avalanche: a pytorch library for deep continual learning"))

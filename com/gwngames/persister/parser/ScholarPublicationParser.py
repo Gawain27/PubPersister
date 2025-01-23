@@ -140,13 +140,17 @@ class ScholarPublicationParser:
 
             author_name = author_name.lower()
             surname = author_name.split(" ")[-1]
+            if len(author_name.split(" ")[0].replace('.', '')) > 1:
+                initials = author_name[:2]
+            else:
+                initials = author_name[:1]
 
             author = (
                 self.session.query(Author)
                 .filter(Author.name.like(f"%{surname}"))
-                .filter(Author.name.like(f"{author_name[:1]}%"))
-                .filter(func.jaro_winkler_similarity(Author.name, author_name) >= 0.7)
-                .order_by(desc(func.jaro_winkler_similarity(Author.name, author_name)))
+                .filter(Author.name.like(f"{initials}%"))
+                .filter(func.word_similarity(Author.name, author_name) >= 0.7)
+                .order_by(desc(func.word_similarity(Author.name, author_name)))
                 .first()
             )
 

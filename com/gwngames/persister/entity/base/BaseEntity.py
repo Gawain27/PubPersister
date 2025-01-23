@@ -6,7 +6,7 @@ Base = declarative_base()
 
 class BaseEntity(Base):
     """
-    Base class for all entities, representing the T_BASE_ENTITY table.
+    Base class for all entities
     """
     __abstract__ = True
 
